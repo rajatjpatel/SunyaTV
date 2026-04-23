@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SunyaTVx</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #080c10;
+    --surface: #0e1420;
+    --surface2: #141c2a;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00d4ff;
+    --accent2: #7c4dff;
+    --bull: #00ff87;
+    --bear: #ff4d6d;
+    --neutral: #ffd700;
+    --text: #e8eaf6;
+    --muted: #5a6475;
+    --font-mono: 'Space Mono', monospace;
+    --font-ui: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ── */
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    padding: 14px 16px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent), var(--bull));
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo-hex {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800;
+    color: #fff;
+    letter-spacing: -1px;
+    font-family: var(--font-mono);
+    flex-shrink: 0;
+  }
+  .logo-text {
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    background: linear-gradient(135deg, #fff 0%, var(--accent) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .logo-sub {
+    font-size: 8px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.12em;
+    margin-top: 1px;
+    text-transform: uppercase;
+  }
+  .header-actions {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .btn-icon {
+    width: 28px; height: 28px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Symbol Bar ── */
+  .symbol-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--surface2);
+    border-radius: 8px;
+  }
+  .symbol-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  .symbol-dot.active { background: var(--bull); box-shadow: 0 0 6px var(--bull); animation: pulse 2s infinite; }
+  .symbol-dot.loading { background: var(--accent); animation: pulse 0.8s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .symbol-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.06em;
+  }
+  .symbol-tf {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    background: rgba(255,255,255,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+  .trend-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    letter-spacing: 0.1em;
+  }
+  .trend-bull { background: rgba(0,255,135,0.12); color: var(--bull); border: 1px solid rgba(0,255,135,0.3); }
+  .trend-bear { background: rgba(255,77,109,0.12); color: var(--bear); border: 1px solid rgba(255,77,109,0.3); }
+  .trend-neutral { background: rgba(255,215,0,0.1); color: var(--neutral); border: 1px solid rgba(255,215,0,0.25); }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--surface);
+    padding: 0 8px;
+  }
+  .tab {
+    flex: 1;
+    padding: 10px 4px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Scrollable Content ── */
+  .tab-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .tab-content.active { display: flex; }
+  .tab-content::-webkit-scrollbar { width: 4px; }
+  .tab-content::-webkit-scrollbar-track { background: transparent; }
+  .tab-content::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 2px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card-title .dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--accent);
+  }
+  .card-body { padding: 12px; }
+
+  /* ── Analysis Quick Buttons ── */
+  .quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .quick-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+    color: var(--text);
+    font-family: var(--font-ui);
+  }
+  .quick-btn:hover {
+    border-color: var(--accent);
+    background: rgba(0,212,255,0.05);
+    transform: translateY(-1px);
+  }
+  .quick-btn.active { border-color: var(--accent); background: rgba(0,212,255,0.08); }
+  .quick-btn-icon { font-size: 18px; margin-bottom: 4px; display: block; }
+  .quick-btn-label { font-size: 11px; font-weight: 600; display: block; }
+  .quick-btn-desc { font-size: 9px; color: var(--muted); display: block; margin-top: 1px; }
+
+  /* ── Metrics Grid ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .metric {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+  }
+  .metric-label {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+    margin-bottom: 4px;
+  }
+  .metric-value {
+    font-size: 15px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    color: #fff;
+  }
+  .metric-value.bull { color: var(--bull); }
+  .metric-value.bear { color: var(--bear); }
+  .metric-value.neutral { color: var(--neutral); }
+  .metric-sub {
+    font-size: 9px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    margin-top: 2px;
+  }
+
+  /* ── Level List ── */
+  .level-list { display: flex; flex-direction: column; gap: 4px; }
+  .level-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    background: var(--surface2);
+    border-radius: 7px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .level-item:hover { border-color: rgba(255,255,255,0.15); transform: translateX(2px); }
+  .level-pill {
+    font-size: 8px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 20px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+    min-width: 32px;
+    text-align: center;
+  }
+  .pill-sup { background: rgba(0,255,135,0.15); color: var(--bull); border: 1px solid rgba(0,255,135,0.3); }
+  .pill-res { background: rgba(255,77,109,0.15); color: var(--bear); border: 1px solid rgba(255,77,109,0.3); }
+  .pill-key { background: rgba(255,215,0,0.12); color: var(--neutral); border: 1px solid rgba(255,215,0,0.25); }
+  .level-price {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--font-mono);
+    flex: 1;
+  }
+  .level-strength {
+    font-size: 9px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+  .level-touches {
+    font-size: 9px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+  }
+
+  /* ── Analysis Summary ── */
+  .analysis-text {
+    font-size: 12px;
+    line-height: 1.7;
+    color: rgba(232,234,246,0.85);
+    font-family: var(--font-ui);
+  }
+  .analysis-text strong { color: #fff; }
+  .analysis-text .bull-text { color: var(--bull); font-weight: 600; }
+  .analysis-text .bear-text { color: var(--bear); font-weight: 600; }
+  .highlight-box {
+    background: rgba(0,212,255,0.05);
+    border: 1px solid rgba(0,212,255,0.15);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: rgba(255,255,255,0.8);
+  }
+
+  /* ── Spinner ── */
+  .spinner-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 32px 16px;
+    color: var(--muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.06em;
+  }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--surface2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Chat Panel ── */
+  .chat-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    gap: 0;
+  }
+  .chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .chat-messages::-webkit-scrollbar { width: 3px; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--surface2); }
+
+  .chat-msg {
+    max-width: 92%;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    animation: fadeUp 0.2s ease;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .chat-msg.user {
+    background: rgba(124,77,255,0.2);
+    border: 1px solid rgba(124,77,255,0.3);
+    color: #fff;
+    align-self: flex-end;
+    border-bottom-right-radius: 3px;
+  }
+  .chat-msg.ai {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    align-self: flex-start;
+    border-bottom-left-radius: 3px;
+  }
+  .chat-msg.system {
+    background: rgba(255,215,0,0.06);
+    border: 1px solid rgba(255,215,0,0.15);
+    color: var(--neutral);
+    align-self: center;
+    font-size: 10px;
+    font-family: var(--font-mono);
+  }
+  .chat-msg.error {
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.2);
+    color: var(--bear);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    align-self: center;
+  }
+  .msg-label {
+    font-size: 9px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ── Chat Input ── */
+  .chat-input-area {
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .suggestion-chips {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .chip {
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .input-row {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+  }
+  .chat-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    resize: none;
+    outline: none;
+    line-height: 1.5;
+    min-height: 36px;
+    max-height: 80px;
+    transition: border-color 0.15s;
+  }
+  .chat-input:focus { border-color: var(--accent); }
+  .chat-input::placeholder { color: var(--muted); }
+  .send-btn {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .send-btn:hover { transform: scale(1.05); opacity: 0.9; }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── Settings ── */
+  .setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-size: 12px; font-weight: 600; }
+  .setting-desc { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .toggle {
+    width: 36px; height: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 14px; height: 14px;
+    background: var(--muted);
+    border-radius: 50%;
+    top: 2px; left: 2px;
+    transition: all 0.2s;
+  }
+  .toggle.on { background: rgba(0,255,135,0.2); border-color: var(--bull); }
+  .toggle.on::after { left: 18px; background: var(--bull); }
+
+  /* ── Empty / Waiting State ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px 20px;
+    gap: 12px;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 36px; }
+  .empty-title { font-size: 13px; font-weight: 700; color: var(--text); }
+  .empty-desc { font-size: 11px; line-height: 1.6; }
+
+  /* ── Disclaimer ── */
+  .disclaimer {
+    padding: 8px 12px;
+    background: rgba(255,215,0,0.04);
+    border-top: 1px solid rgba(255,215,0,0.1);
+    font-size: 9px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.5;
+    flex-shrink: 0;
+  }
+
+  /* ── Settings Inputs ── */
+  .setting-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .setting-input:focus { border-color: var(--accent); }
+  .setting-input::placeholder { color: var(--muted); }
+  .setting-select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235a6475' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 14px;
+  }
+  .setting-select:focus { border-color: var(--accent); }
+  .setting-select option { background: var(--surface); color: var(--text); }
+  .setting-field { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .setting-field-label {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+  }
+  .btn-test {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-ui);
+    padding: 8px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.04em;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+  }
+  .btn-test:hover { transform: translateY(-1px); opacity: 0.9; }
+  .btn-test:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .api-status {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    padding: 6px 10px;
+    border-radius: 6px;
+    margin-top: 6px;
+    display: none;
+  }
+  .api-status.success {
+    display: block;
+    background: rgba(0,255,135,0.08);
+    border: 1px solid rgba(0,255,135,0.2);
+    color: var(--bull);
+  }
+  .api-status.error {
+    display: block;
+    background: rgba(255,77,109,0.08);
+    border: 1px solid rgba(255,77,109,0.2);
+    color: var(--bear);
+  }
+  .api-status.loading {
+    display: block;
+    background: rgba(0,212,255,0.08);
+    border: 1px solid rgba(0,212,255,0.2);
+    color: var(--accent);
+  }
+  .key-mask {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .key-mask .setting-input { flex: 1; }
+  .btn-eye {
+    width: 28px; height: 28px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  .btn-eye:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-top">
+      <div class="logo">
+        <div class="logo-hex">S</div>
+        <div>
+          <div class="logo-text">SunyaTVx</div>
+          <div class="logo-sub">Institutional Analysis</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button class="btn-icon" id="btn-clear" title="Clear annotations">🗑</button>
+        <button class="btn-icon" id="btn-refresh" title="Refresh analysis">↻</button>
+      </div>
+    </div>
+    <div class="symbol-bar">
+      <div class="symbol-dot" id="sym-dot"></div>
+      <div class="symbol-name" id="sym-name">Waiting for chart...</div>
+      <div class="symbol-tf" id="sym-tf">—</div>
+      <div class="trend-badge trend-neutral" id="trend-badge" style="display:none">NEUTRAL</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" data-tab="analysis">Analysis</div>
+    <div class="tab" data-tab="levels">Levels</div>
+    <div class="tab" data-tab="chat">AI Chat</div>
+    <div class="tab" data-tab="settings">Config</div>
+  </div>
+
+  <!-- Analysis Tab -->
+  <div class="tab-content active" id="tab-analysis">
+    <div id="analysis-loading" class="spinner-wrap">
+      <div class="spinner"></div>
+      <span>Waiting for TradingView...</span>
+    </div>
+    <div id="analysis-content" style="display:none; flex-direction:column; gap:10px;">
+
+      <!-- Quick Analysis Buttons -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="dot"></span>Quick Analysis</div>
+        </div>
+        <div class="card-body">
+          <div class="quick-grid">
+            <button class="quick-btn" data-analysis="sr">
+              <span class="quick-btn-icon">⟷</span>
+              <span class="quick-btn-label">Support & Resistance</span>
+              <span class="quick-btn-desc">Key institutional levels</span>
+            </button>
+            <button class="quick-btn" data-analysis="trend">
+              <span class="quick-btn-icon">↗</span>
+              <span class="quick-btn-label">Trend Analysis</span>
+              <span class="quick-btn-desc">Direction & momentum</span>
+            </button>
+            <button class="quick-btn" data-analysis="fibonacci">
+              <span class="quick-btn-icon">🌀</span>
+              <span class="quick-btn-label">Fibonacci</span>
+              <span class="quick-btn-desc">Retracement zones</span>
+            </button>
+            <button class="quick-btn" data-analysis="targets">
+              <span class="quick-btn-icon">🎯</span>
+              <span class="quick-btn-label">Trade Setup</span>
+              <span class="quick-btn-desc">Entry / TP / SL</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market Metrics -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="dot"></span>Market Snapshot</div>
+          <span style="font-size:9px;color:var(--muted);font-family:var(--font-mono);" id="snap-time">—</span>
+        </div>
+        <div class="card-body">
+          <div class="metrics-grid">
+            <div class="metric">
+              <div class="metric-label">Trend</div>
+              <div class="metric-value" id="m-trend">—</div>
+              <div class="metric-sub" id="m-trend-sub"></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Momentum</div>
+              <div class="metric-value" id="m-mom">—</div>
+              <div class="metric-sub" id="m-mom-sub"></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Nearest Sup</div>
+              <div class="metric-value bull" id="m-sup">—</div>
+              <div class="metric-sub" id="m-sup-sub"></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Nearest Res</div>
+              <div class="metric-value bear" id="m-res">—</div>
+              <div class="metric-sub" id="m-res-sub"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI Summary -->
+      <div class="card" id="ai-summary-card">
+        <div class="card-header">
+          <div class="card-title"><span class="dot"></span>AI Summary</div>
+        </div>
+        <div class="card-body">
+          <div class="analysis-text" id="ai-summary-text">Run an analysis to see AI insights.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Levels Tab -->
+  <div class="tab-content" id="tab-levels">
+    <div id="levels-empty" class="empty-state">
+      <div class="empty-icon">📊</div>
+      <div class="empty-title">No levels detected yet</div>
+      <div class="empty-desc">Run "Support & Resistance" analysis from the Analysis tab to populate levels.</div>
+    </div>
+    <div id="levels-content" style="display:none; flex-direction:column; gap:10px;"></div>
+  </div>
+
+  <!-- Chat Tab -->
+  <div class="tab-content" id="tab-chat" style="padding:0; overflow:hidden;">
+    <div class="chat-wrap">
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-msg system">⬡ SunyaTVx AI — Financial Analysis Only</div>
+        <div class="chat-msg ai">
+          <div class="msg-label">SunyaTVx AI</div>
+          Hello! I'm your institutional-grade chart analysis assistant. Ask me about support/resistance levels, trend analysis, trade setups, or technical indicators for the current chart. I'm restricted to financial analysis only.
+        </div>
+      </div>
+      <div class="chat-input-area">
+        <div class="suggestion-chips" id="chips">
+          <span class="chip" data-q="What are the key support and resistance levels?">S&R Levels</span>
+          <span class="chip" data-q="What is the current trend direction?">Trend</span>
+          <span class="chip" data-q="Give me a trade setup with entry, TP and SL">Trade Setup</span>
+          <span class="chip" data-q="Show fibonacci retracement levels">Fibonacci</span>
+          <span class="chip" data-q="Is this a good buy or sell opportunity?">Buy/Sell?</span>
+        </div>
+        <div class="input-row">
+          <textarea class="chat-input" id="chat-input" placeholder="Ask about this chart... (financial questions only)" rows="1"></textarea>
+          <button class="send-btn" id="send-btn">➤</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Tab -->
+  <div class="tab-content" id="tab-settings">
+    <!-- Groq API Configuration -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="dot" style="background:var(--accent2)"></span>Groq AI Engine</div>
+        <span style="font-size:9px;color:var(--muted);font-family:var(--font-mono);" id="api-conn-status">⚪ Not configured</span>
+      </div>
+      <div class="card-body">
+        <div class="setting-field">
+          <label class="setting-field-label">API Key</label>
+          <div class="key-mask">
+            <input type="password" class="setting-input" id="groq-api-key" placeholder="gsk_xxxxxx..." autocomplete="off" />
+            <button class="btn-eye" id="btn-eye-toggle" title="Show/Hide key">👁</button>
+          </div>
+        </div>
+        <div class="setting-field">
+          <label class="setting-field-label">Model</label>
+          <select class="setting-select" id="groq-model">
+            <option value="llama-3.3-70b-versatile">Llama 3.3 70B Versatile</option>
+            <option value="llama-3.1-8b-instant">Llama 3.1 8B Instant</option>
+            <option value="llama3-70b-8192">Llama 3 70B</option>
+            <option value="llama3-8b-8192">Llama 3 8B</option>
+            <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
+            <option value="gemma2-9b-it">Gemma 2 9B</option>
+          </select>
+        </div>
+        <button class="btn-test" id="btn-test-api">⚡ Test Connection</button>
+        <div class="api-status" id="api-status"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="dot"></span>Analysis Settings</div>
+      </div>
+      <div class="card-body">
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Auto-Analyze on Load</div>
+            <div class="setting-desc">Run S&R analysis when a chart loads</div>
+          </div>
+          <div class="toggle on" data-setting="autoAnalyze" id="tog-auto"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Fibonacci Overlay</div>
+            <div class="setting-desc">Show Fibonacci retracements</div>
+          </div>
+          <div class="toggle" data-setting="showFib" id="tog-fib"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Trade Targets</div>
+            <div class="setting-desc">Draw TP/SL zones on chart</div>
+          </div>
+          <div class="toggle on" data-setting="showTargets" id="tog-targets"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Trend Watermark</div>
+            <div class="setting-desc">Show BULLISH/BEARISH overlay</div>
+          </div>
+          <div class="toggle on" data-setting="showWatermark" id="tog-wm"></div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Institutional Zones</div>
+            <div class="setting-desc">Highlight supply/demand zones</div>
+          </div>
+          <div class="toggle on" data-setting="showZones" id="tog-zones"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="dot"></span>About</div>
+      </div>
+      <div class="card-body">
+        <div class="analysis-text">
+          <strong>SunyaTVx v1.1</strong><br/>
+          Institutional-grade chart analysis for TradingView.<br/><br/>
+          Powered by <strong style="color:var(--accent)">Groq AI</strong> — ultra-fast LLM inference. Educational purposes only — not financial advice.<br/><br/>
+          <span style="color:var(--muted);font-size:10px;font-family:var(--font-mono);">Architecture inspired by open-source community tools including TVRemix.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Disclaimer -->
+  <div class="disclaimer">
+    ⚠ Educational purposes only. Not financial advice. Trade at your own risk.
+  </div>
+
+</div>
+<script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "SunyaTVx - Institutional Chart Analysis",
+  "version": "1.0.0",
+  "description": "Real-time institutional-grade technical analysis and AI-powered chart annotations for TradingView. Educational purposes only.",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.tradingview.com/*",
+    "https://tradingview.com/*",
+    "https://api.groq.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.tradingview.com/*", "https://tradingview.com/*"],
+      "js": ["src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
+  },
+  "action": {
+    "default_title": "SunyaTVx - Open Analysis Panel",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["src/injected.js"],
+      "matches": ["https://www.tradingview.com/*", "https://tradingview.com/*"]
+    }
+  ]
+}
