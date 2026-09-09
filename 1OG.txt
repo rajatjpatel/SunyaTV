@@ -1,0 +1,302 @@
+// This Pine Script code is subject to the Mozilla Public License 2.0
+
+//@version=6
+indicator("R6O", 'R6O', overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// ==========================================
+// ORIGINAL FUNCTIONS (UNTOUCHED)
+// ==========================================
+getTimeframeInMinutes() =>
+    tfStr = timeframe.period
+    if tfStr == "1"
+        1
+    else if tfStr == "3"
+        3
+    else if tfStr == "5"
+        5
+    else if tfStr == "15"
+        15
+    else if tfStr == "30"
+        30
+    else if tfStr == "45"
+        45
+    else if tfStr == "60" or tfStr == "1H"
+        60
+    else if tfStr == "120" or tfStr == "2H"
+        120
+    else if tfStr == "180" or tfStr == "3H"
+        180
+    else if tfStr == "240" or tfStr == "4H"
+        240
+    else if tfStr == "D" or tfStr == "1D"
+        1440
+    else if tfStr == "W" or tfStr == "1W"
+        10080
+    else if tfStr == "M" or tfStr == "1M"
+        43200
+    else
+        int(nz(str.tonumber(tfStr), 5))
+
+// ==========================================
+// ORIGINAL ZIGZAG & FIBONACCI
+// ==========================================
+type Settings
+    float devThreshold = 5.0
+    int depth = 10
+    color lineColor = #2962FF
+    bool extendLast = true
+    bool displayReversalPrice = true
+    bool displayCumulativeVolume = true
+    bool displayReversalPriceChange = true
+    string differencePriceMode = "Absolute"
+    bool draw = true
+    bool allowZigZagOnOneBar = true
+    bool displayFibLevels = true
+    color fibLevelColor = color.white
+    string fibLineStyle = "Dashed"
+    float fibTolerance = 0.04
+
+type Pivot
+    line ln
+    label lb
+    bool isHigh
+    float vol
+    chart.point start
+    chart.point end
+    line fib50 = na
+    line fib618 = na
+    line fib382 = na
+    line fib786 = na
+
+type ZigZag
+    Settings settings
+    array<Pivot> pivots
+    float sumVol = 0
+    Pivot extend = na
+
+findPivotPoint(series float src, series float length, simple bool isHigh) =>
+    float pivotPrice = nz(src[length])
+    if length == 0
+        chart.point.new(time, bar_index, pivotPrice)
+    else if length * 2 <= bar_index
+        bool isFound = true
+        for i = 0 to math.abs(length - 1)
+            if (isHigh and src[i] > pivotPrice) or (not isHigh and src[i] < pivotPrice)
+                isFound := false
+                break
+        for i = length + 1 to 2 * length
+            if (isHigh and src[i] >= pivotPrice) or (not isHigh and src[i] <= pivotPrice)
+                isFound := false
+                break
+        if isFound
+            chart.point.new(time[length], bar_index[length], pivotPrice)
+
+calcDev(series float basePrice, series float price) =>
+    100 * (price - basePrice) / math.abs(basePrice)
+
+getFibLevel(float retracement, float tolerance) =>
+    string result = ""
+    float abs_ret = math.abs(retracement)
+    if abs_ret >= 4.236 * (1 - tolerance) and abs_ret <= 4.236 * (1 + tolerance)
+        result := "423.6%"
+    else if abs_ret >= 4.618 * (1 - tolerance) and abs_ret <= 4.618 * (1 + tolerance)
+        result := "461.8%"
+    else if abs_ret >= 3.618 * (1 - tolerance) and abs_ret <= 3.618 * (1 + tolerance)
+        result := "361.8%"
+    else if abs_ret >= 3.14 * (1 - tolerance) and abs_ret <= 3.14 * (1 + tolerance)
+        result := "314%"
+    else if abs_ret >= 2.618 * (1 - tolerance) and abs_ret <= 2.618 * (1 + tolerance)
+        result := "261.8%"
+    else if abs_ret >= 2.236 * (1 - tolerance) and abs_ret <= 2.236 * (1 + tolerance)
+        result := "224.2%"
+    else if abs_ret >= 2.0 * (1 - tolerance) and abs_ret <= 2.0 * (1 + tolerance)
+        result := "200%"
+    else if abs_ret >= 1.618 * (1 - tolerance) and abs_ret <= 1.618 * (1 + tolerance)
+        result := "161.8%"
+    else if abs_ret >= 1.414 * (1 - tolerance) and abs_ret <= 1.414 * (1 + tolerance)
+        result := "141.4%"
+    else if abs_ret >= 1.382 * (1 - tolerance) and abs_ret <= 1.382 * (1 + tolerance)
+        result := "138.2%"
+    else if abs_ret >= 1.272 * (1 - tolerance) and abs_ret <= 1.272 * (1 + tolerance)
+        result := "127.2%"
+    else if abs_ret >= 1.13 * (1 - tolerance) and abs_ret <= 1.13 * (1 + tolerance)
+        result := "113%"
+    else if abs_ret >= 1.0 * (1 - tolerance) and abs_ret <= 1.0 * (1 + tolerance)
+        result := "100%"
+    else if abs_ret >= 0.886 * (1 - tolerance) and abs_ret <= 0.886 * (1 + tolerance)
+        result := "88.6%"
+    else if abs_ret >= 0.786 * (1 - tolerance) and abs_ret <= 0.786 * (1 + tolerance)
+        result := "78.6%"
+    else if abs_ret >= 0.707 * (1 - tolerance) and abs_ret <= 0.707 * (1 + tolerance)
+        result := "70.7%"
+    else if abs_ret >= 0.618 * (1 - tolerance) and abs_ret <= 0.618 * (1 + tolerance)
+        result := "61.8%"
+    else if abs_ret >= 0.5 * (1 - tolerance) and abs_ret <= 0.5 * (1 + tolerance)
+        result := "50%"
+    else if abs_ret >= 0.382 * (1 - tolerance) and abs_ret <= 0.382 * (1 + tolerance)
+        result := "38.2%"
+    else if abs_ret >= 0.236 * (1 - tolerance) and abs_ret <= 0.236 * (1 + tolerance)
+        result := "23.6%"
+    result
+
+getLineStyle(style) =>
+    switch style
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        "Solid"  => line.style_solid
+        => line.style_dashed
+
+priceRotationAggregate(series float start, series float end, series float vol, series float prevPivot, Settings settings) =>
+    string label_text = ""
+    if settings.displayReversalPrice
+        float diff = end - start
+        string sign = math.sign(diff) > 0 ? "+" : ""
+        string diffStr = settings.differencePriceMode == "Absolute" ? str.tostring(diff, format.mintick) : str.tostring(diff * 100 / start, format.percent)
+        label_text := "R (" + sign + diffStr + ")"
+    if settings.displayCumulativeVolume
+        label_text := label_text + "\nVol: " + str.tostring(vol, "#.##")
+    if not na(prevPivot)
+        float impulseSize = math.abs(start - prevPivot)
+        if impulseSize > 0.00001
+            float retraceAmount = math.abs(end - start)
+            float retracePercent = retraceAmount / impulseSize
+            string fibStr = getFibLevel(retracePercent, settings.fibTolerance)
+            if fibStr != ""
+                label_text := label_text + "\nF " + fibStr
+    label_text
+
+makePivotLabel(series bool isHigh, series chart.point point, Settings settings) =>
+    label.new(point, text = isHigh ? "H" : "L", color = #f0060600, textcolor = isHigh ? color.green : color.red, style = isHigh ? label.style_label_down : label.style_label_up, xloc = xloc.bar_time, yloc = isHigh ? yloc.abovebar : yloc.belowbar)
+
+drawFibonacciLevels(float startPrice, float endPrice, chart.point start, chart.point end, Settings settings) =>
+    if settings.displayFibLevels and startPrice != endPrice
+        float totalMove = endPrice - startPrice
+        float l382p = endPrice > startPrice ? endPrice - (totalMove * 0.382) : endPrice + (math.abs(totalMove) * 0.382)
+        float l50p  = endPrice > startPrice ? endPrice - (totalMove * 0.50)  : endPrice + (math.abs(totalMove) * 0.50)
+        float l618p = endPrice > startPrice ? endPrice - (totalMove * 0.618) : endPrice + (math.abs(totalMove) * 0.618)
+        float l786p = endPrice > startPrice ? endPrice - (totalMove * 0.786) : endPrice + (math.abs(totalMove) * 0.786)
+        
+        l382 = line.new(start.time, l382p, end.time, l382p, xloc = xloc.bar_time, color = color.new(settings.fibLevelColor, 10), width = 1, style = line.style_solid)
+        l50  = line.new(start.time, l50p,  end.time, l50p,  xloc = xloc.bar_time, color = settings.fibLevelColor, width = 1, style = getLineStyle(settings.fibLineStyle))
+        l618 = line.new(start.time, l618p, end.time, l618p, xloc = xloc.bar_time, color = settings.fibLevelColor, width = 1, style = getLineStyle(settings.fibLineStyle))
+        l786 = line.new(start.time, l786p, end.time, l786p, xloc = xloc.bar_time, color = color.new(settings.fibLevelColor, 10), width = 1, style = line.style_solid)
+        [l50, l618, l382, l786]
+    else
+        [line(na), line(na), line(na), line(na)]
+
+method updatePivot(Pivot this, chart.point point, float vol, float prevPivotPrice, Settings settings) =>
+    this.end := point
+    this.vol := vol
+    this.lb.set_point(point)
+    this.lb.set_text(priceRotationAggregate(this.start.price, point.price, vol, prevPivotPrice, settings))
+    this.ln.set_second_point(this.end)
+
+method updateFibLevels(Pivot this, chart.point end, Settings settings) =>
+    if settings.displayFibLevels and this.start.price != end.price
+        float totalMove = end.price - this.start.price
+        float l382p = end.price > this.start.price ? end.price - (totalMove * 0.382) : end.price + (math.abs(totalMove) * 0.382)
+        float l50p  = end.price > this.start.price ? end.price - (totalMove * 0.50)  : end.price + (math.abs(totalMove) * 0.50)
+        float l618p = end.price > this.start.price ? end.price - (totalMove * 0.618) : end.price + (math.abs(totalMove) * 0.618)
+        float l786p = end.price > this.start.price ? end.price - (totalMove * 0.786) : end.price + (math.abs(totalMove) * 0.786)
+        
+        if not na(this.fib382)
+            this.fib382.set_first_point(chart.point.new(this.start.time, this.start.index, l382p))
+            this.fib382.set_second_point(chart.point.new(end.time, end.index, l382p))
+        if not na(this.fib50)
+            this.fib50.set_first_point(chart.point.new(this.start.time, this.start.index, l50p))
+            this.fib50.set_second_point(chart.point.new(end.time, end.index, l50p))
+        if not na(this.fib618)
+            this.fib618.set_first_point(chart.point.new(this.start.time, this.start.index, l618p))
+            this.fib618.set_second_point(chart.point.new(end.time, end.index, l618p))
+        if not na(this.fib786)
+            this.fib786.set_first_point(chart.point.new(this.start.time, this.start.index, l786p))
+            this.fib786.set_second_point(chart.point.new(end.time, end.index, l786p))
+
+newPivot(series chart.point start, series chart.point end, series float vol, series bool isHigh, series float prevPivotPrice, series Settings settings) =>
+    Pivot p = Pivot.new(na, na, isHigh, vol, start, end)
+    if settings.draw
+        p.ln := line.new(start, end, xloc = xloc.bar_time, color = settings.lineColor, width = 1)
+        p.lb := makePivotLabel(isHigh, end, settings)
+        [l50, l618, l382, l786] = drawFibonacciLevels(start.price, end.price, start, end, settings)
+        p.fib50 := l50, p.fib618 := l618, p.fib382 := l382, p.fib786 := l786
+    p.updatePivot(end, vol, prevPivotPrice, settings)
+    p
+
+method delete(series Pivot this) =>
+    line.delete(this.ln), label.delete(this.lb), line.delete(this.fib50), line.delete(this.fib618), line.delete(this.fib382), line.delete(this.fib786)
+
+method isMorePrice(series Pivot this, series chart.point point) =>
+    int m = this.isHigh ? 1 : -1
+    point.price * m > this.end.price * m
+
+method lastPivot(series ZigZag this) =>
+    int numberOfPivots = this.pivots.size()
+    numberOfPivots > 0 ? this.pivots.get(numberOfPivots - 1) : na
+
+method updateLastPivot(series ZigZag this, series chart.point point) =>
+    Pivot lp = this.lastPivot()
+    float prevPivotPrice = this.pivots.size() >= 2 ? this.pivots.get(this.pivots.size() - 2).end.price : na
+    if this.pivots.size() == 1
+        lp.start := point
+        if this.settings.draw
+            lp.ln.set_first_point(point)
+    lp.updatePivot(point, lp.vol + this.sumVol, prevPivotPrice, this.settings)
+    lp.updateFibLevels(point, this.settings)
+    this.sumVol := 0
+
+method newPivotFound(series ZigZag this, series Pivot new) =>
+    this.pivots.push(new)
+    this.sumVol := 0
+
+method newPivotPointFound(series ZigZag this, simple bool isHigh, series chart.point point) =>
+    Pivot lp = this.lastPivot()
+    if not na(lp)
+        if lp.isHigh == isHigh
+            if lp.isMorePrice(point)
+                this.updateLastPivot(point)
+                true
+            else
+                false
+        else
+            float dev = calcDev(lp.end.price, point.price)
+            if (not lp.isHigh and dev >= this.settings.devThreshold) or (lp.isHigh and dev <= -1 * this.settings.devThreshold)
+                float ppp = this.pivots.size() >= 2 ? this.pivots.get(this.pivots.size() - 2).end.price : (this.pivots.size() > 0 ? this.pivots.get(0).end.price : na)
+                this.newPivotFound(newPivot(lp.end, point, this.sumVol, isHigh, ppp, this.settings))
+                true
+            else
+                false
+    else
+        this.newPivotFound(newPivot(point, point, this.sumVol, isHigh, na, this.settings))
+        true
+
+method tryFindPivot(series ZigZag this, series float src, simple bool isHigh, series int depth, series bool registerPivot = true) =>
+    chart.point point = findPivotPoint(src, depth, isHigh)
+    not na(point) and registerPivot ? this.newPivotPointFound(isHigh, point) : false
+
+method update(series ZigZag this) =>
+    int depth = math.max(2, math.floor(this.settings.depth / 2))
+    this.sumVol += nz(volume[depth])
+    bool somethingChanged = this.tryFindPivot(high, true, depth)
+    somethingChanged := this.tryFindPivot(low, false, depth, this.settings.allowZigZagOnOneBar or not somethingChanged) or somethingChanged
+    Pivot lastPivot = this.lastPivot()
+    float remVol = math.sum(volume, math.max(depth, 1))
+    if this.settings.extendLast and barstate.islast and not na(lastPivot)
+        bool isHigh = not lastPivot.isHigh
+        float curSeries = isHigh ? high : low
+        chart.point end = chart.point.new(time, bar_index, curSeries)
+        float prevPivotPrice = this.pivots.size() >= 2 ? this.pivots.get(this.pivots.size() - 2).end.price : (this.pivots.size() == 1 ? this.pivots.get(0).end.price : na)
+        if na(this.extend) or somethingChanged
+            if not na(this.extend)
+                this.extend.delete()
+            this.extend := newPivot(lastPivot.end, end, this.sumVol, isHigh, prevPivotPrice, this.settings)
+        this.extend.updatePivot(end, this.sumVol + remVol, prevPivotPrice, this.settings)
+        this.extend.updateFibLevels(end, this.settings)
+    somethingChanged
+
+newInstance(series Settings settings = na) =>
+    ZigZag.new(na(settings) ? Settings.new() : settings, array.new<Pivot>())
+
+var zigZag = newInstance(Settings.new(input.float(0.1, "Price deviation (%)", 0.00001, group = "ZigZag Settings"), input.int(2, "Pivot legs", 2, group = "ZigZag Settings"), #2962FF, false, true, false, true, "Absolute", true, true, true, color.gray, "Dashed", 0.04))
+
+zigZag.update()
+//==============================================================================================================================

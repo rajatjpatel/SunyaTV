@@ -1,0 +1,438 @@
+//@version=6
+
+indicator("R6", "R6", overlay = true, max_lines_count = 500, max_bars_back = 500)
+
+//--- input parameters (identical to Sunya5)
+InpDepth     = input.int(3, "Depth",     minval = 2)
+InpDeviation = input.int(5,  "Deviation", minval = 0)
+InpBackstep  = input.int(8,  "Back Step", minval = 1)
+
+//--- segment colors: bullish impulse = blue, bearish impulse = red
+bullColor         = input.color(color.blue, "Bullish impulse color")
+bearColor         = input.color(color.red,  "Bearish impulse color")
+
+EXTREMUM = 0
+PEAK     = 1
+BOTTOM   = -1
+
+ExtRecalc = 3
+
+_Point = syminfo.mintick
+
+//+------------------------------------------------------------------+
+//| Feature additions: Settings/Pivot types + helpers                |
+//+------------------------------------------------------------------+
+type Settings
+    bool draw                    = true
+    bool displayCumulativeVolume = true
+    float fibTolerance           = 0.05
+    bool displayFibLevels        = true
+    color fibLevelColor          = color.gray
+    string fibLineStyle          = "Dashed"
+    color upColor                = color.blue
+    color downColor              = color.red
+
+type Pivot
+    int startIdx
+    float startPrice
+    int endIdx
+    float endPrice
+    bool isHigh
+    float vol
+    label lb
+    line ln
+    line fib382
+    line fib50
+    line fib618
+    line fib786
+
+getFibLevel(float retracement, float tolerance) =>
+    string result = ""
+    float abs_ret = math.abs(retracement)
+    if abs_ret >= 4.236 * (1 - tolerance) and abs_ret <= 4.236 * (1 + tolerance)
+        result := "423.6%"
+    else if abs_ret >= 4.618 * (1 - tolerance) and abs_ret <= 4.618 * (1 + tolerance)
+        result := "461.8%"
+    else if abs_ret >= 3.618 * (1 - tolerance) and abs_ret <= 3.618 * (1 + tolerance)
+        result := "361.8%"
+    else if abs_ret >= 3.14 * (1 - tolerance) and abs_ret <= 3.14 * (1 + tolerance)
+        result := "314%"
+    else if abs_ret >= 2.618 * (1 - tolerance) and abs_ret <= 2.618 * (1 + tolerance)
+        result := "261.8%"
+    else if abs_ret >= 2.236 * (1 - tolerance) and abs_ret <= 2.236 * (1 + tolerance)
+        result := "224.2%"
+    else if abs_ret >= 2.0 * (1 - tolerance) and abs_ret <= 2.0 * (1 + tolerance)
+        result := "200%"
+    else if abs_ret >= 1.618 * (1 - tolerance) and abs_ret <= 1.618 * (1 + tolerance)
+        result := "161.8%"
+    else if abs_ret >= 1.414 * (1 - tolerance) and abs_ret <= 1.414 * (1 + tolerance)
+        result := "141.4%"
+    else if abs_ret >= 1.382 * (1 - tolerance) and abs_ret <= 1.382 * (1 + tolerance)
+        result := "138.2%"
+    else if abs_ret >= 1.272 * (1 - tolerance) and abs_ret <= 1.272 * (1 + tolerance)
+        result := "127.2%"
+    else if abs_ret >= 1.13 * (1 - tolerance) and abs_ret <= 1.13 * (1 + tolerance)
+        result := "113%"
+    else if abs_ret >= 1.0 * (1 - tolerance) and abs_ret <= 1.0 * (1 + tolerance)
+        result := "100%"
+    else if abs_ret >= 0.886 * (1 - tolerance) and abs_ret <= 0.886 * (1 + tolerance)
+        result := "88.6%"
+    else if abs_ret >= 0.786 * (1 - tolerance) and abs_ret <= 0.786 * (1 + tolerance)
+        result := "78.6%"
+    else if abs_ret >= 0.707 * (1 - tolerance) and abs_ret <= 0.707 * (1 + tolerance)
+        result := "70.7%"
+    else if abs_ret >= 0.618 * (1 - tolerance) and abs_ret <= 0.618 * (1 + tolerance)
+        result := "61.8%"
+    else if abs_ret >= 0.5 * (1 - tolerance) and abs_ret <= 0.5 * (1 + tolerance)
+        result := "50%"
+    else if abs_ret >= 0.382 * (1 - tolerance) and abs_ret <= 0.382 * (1 + tolerance)
+        result := "38.2%"
+    else if abs_ret >= 0.236 * (1 - tolerance) and abs_ret <= 0.236 * (1 + tolerance)
+        result := "23.6%"
+    result
+
+getLineStyle(style) =>
+    switch style
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        "Solid"  => line.style_solid
+        => line.style_dashed
+
+drawFibonacciLevels(float startPrice, float endPrice, int x1, int x2, Settings settings) =>
+    if settings.displayFibLevels and startPrice != endPrice
+        float totalMove = endPrice - startPrice
+        float l382p = endPrice > startPrice ? endPrice - (totalMove * 0.382) : endPrice + (math.abs(totalMove) * 0.382)
+        float l50p  = endPrice > startPrice ? endPrice - (totalMove * 0.50)  : endPrice + (math.abs(totalMove) * 0.50)
+        float l618p = endPrice > startPrice ? endPrice - (totalMove * 0.618) : endPrice + (math.abs(totalMove) * 0.618)
+        float l786p = endPrice > startPrice ? endPrice - (totalMove * 0.786) : endPrice + (math.abs(totalMove) * 0.786)
+
+        l382 = line.new(x1, l382p, x2, l382p, color = color.new(settings.fibLevelColor, 10), width = 1, style = line.style_solid)
+        l50  = line.new(x1, l50p,  x2, l50p,  color = settings.fibLevelColor, width = 1, style = getLineStyle(settings.fibLineStyle))
+        l618 = line.new(x1, l618p, x2, l618p, color = settings.fibLevelColor, width = 1, style = getLineStyle(settings.fibLineStyle))
+        l786 = line.new(x1, l786p, x2, l786p, color = color.new(settings.fibLevelColor, 10), width = 1, style = line.style_solid)
+        [l50, l618, l382, l786]
+    else
+        [line(na), line(na), line(na), line(na)]
+
+//--- pip size: 5-digit FX (0.00001) and 3-digit JPY (0.001) count 10
+//    ticks per pip; 4-digit FX / 2-digit JPY count 1 tick per pip
+f_pipSize() =>
+    float p = syminfo.mintick
+    if p <= 0.00001 or p == 0.001
+        p * 10.0
+    else
+        p
+
+//--- format string matching the instrument decimals (from mintick)
+f_tickFmt() =>
+    string fmt = "#"
+    int d = int(math.round(math.log10(1.0 / syminfo.mintick)))
+    if d > 0
+        fmt := "#."
+        for i = 1 to d
+            fmt := fmt + "0"
+    fmt
+
+priceRotationAggregate(float start, float end, float vol, float prevPivot, Settings settings) =>
+    bool isFX = str.contains(syminfo.tickerid, "FX_IDC:")
+    string label_text = ""
+    if isFX
+        label_text := str.tostring(math.abs(end - start) / f_pipSize(), "#.##")
+    else
+        label_text := str.tostring(math.abs(end - start), f_tickFmt())
+    if settings.displayCumulativeVolume
+        label_text := label_text + "\nV " + str.tostring(vol, "#.##")
+    if not na(prevPivot)
+        float impulseSize = math.abs(start - prevPivot)
+        if impulseSize > 0.00001
+            float retraceAmount = math.abs(end - start)
+            float retracePercent = retraceAmount / impulseSize
+            string fibStr = getFibLevel(retracePercent, settings.fibTolerance)
+            if fibStr != ""
+                label_text := label_text + "\nF " + fibStr
+    label_text
+
+makePivotLabel(bool isHigh, int x, float y, Settings settings) =>
+    label.new(x, y, text = isHigh ? "H" : "L", color = color.new(color.red, 100), textcolor = isHigh ? settings.upColor : settings.downColor, style = isHigh ? label.style_label_down : label.style_label_up, xloc = xloc.bar_index, yloc = isHigh ? yloc.abovebar : yloc.belowbar)
+
+method updatePivot(Pivot this, int endIdx, float endPrice, float vol, float prevPivotPrice, Settings settings) =>
+    this.endIdx := endIdx
+    this.endPrice := endPrice
+    this.vol := vol
+    if not na(this.lb)
+        string hdr = "LR"
+        if this.isHigh
+            hdr := "HR"
+        this.lb.set_xy(endIdx, endPrice)
+        this.lb.set_text(hdr + " " + priceRotationAggregate(this.startPrice, endPrice, vol, prevPivotPrice, settings))
+    if not na(this.ln)
+        this.ln.set_x2(endIdx)
+        this.ln.set_y2(endPrice)
+
+newPivot(int startIdx, float startPrice, int endIdx, float endPrice, float vol, bool isHigh, float prevPivotPrice, Settings settings) =>
+    Pivot p = Pivot.new(startIdx, startPrice, endIdx, endPrice, isHigh, vol, na, na)
+    if settings.draw
+        p.ln := line.new(startIdx, startPrice, endIdx, endPrice, color = endPrice > startPrice ? settings.upColor : settings.downColor, width = 1)
+        p.lb := makePivotLabel(isHigh, endIdx, endPrice, settings)
+        [l50, l618, l382, l786] = drawFibonacciLevels(startPrice, endPrice, startIdx, endIdx, settings)
+        p.fib50 := l50
+        p.fib618 := l618
+        p.fib382 := l382
+        p.fib786 := l786
+    p.updatePivot(endIdx, endPrice, vol, prevPivotPrice, settings)
+    p
+
+//+------------------------------------------------------------------+
+//| Draw zigzag with features: pivot lines, H/L labels, fib levels |
+//| and price-rotation label text on every zigzag swing             |
+//+------------------------------------------------------------------+
+f_draw_features(xBase, peakBuf, bottomBuf, colorBuf, volArr, highArr, lowArr, settings, linesArr, labelsArr) =>
+    //--- pass 1: collect all pivots
+    int[] px = array.new_int()
+    float[] py = array.new_float()
+    bool[] ph = array.new_bool()
+    for i = 0 to array.size(peakBuf) - 1
+        pv = array.get(peakBuf, i)
+        bv = array.get(bottomBuf, i)
+        if pv != 0.0 or bv != 0.0
+            array.push(px, i)
+            array.push(py, pv != 0.0 ? pv : bv)
+            array.push(ph, pv != 0.0)
+    //--- pass 2: draw segments, levels, labels and the 70.7% dot
+    for seg = 0 to array.size(px) - 2
+        sIdx = array.get(px, seg)
+        eIdx = array.get(px, seg + 1)
+        sY = array.get(py, seg)
+        eY = array.get(py, seg + 1)
+        isH = array.get(ph, seg + 1)
+        float prevP = seg >= 1 ? array.get(py, seg - 1) : na
+        vsum = 0.0
+        for k = sIdx + 1 to eIdx
+            vsum += array.get(volArr, k)
+        p = newPivot(xBase + sIdx, sY, xBase + eIdx, eY, vsum, isH, prevP, settings)
+        if not na(p.ln)
+            array.push(linesArr, p.ln)
+        if not na(p.fib50)
+            array.push(linesArr, p.fib50)
+        if not na(p.fib618)
+            array.push(linesArr, p.fib618)
+        if not na(p.fib382)
+            array.push(linesArr, p.fib382)
+        if not na(p.fib786)
+            array.push(linesArr, p.fib786)
+        if not na(p.lb)
+            array.push(labelsArr, p.lb)
+        //--- 70.7% yellow dot ON the impulse leg: where the segment
+        //    line crosses the 70.7% level price
+        //    (bullish: 100% at bottom start, 0% at top end; bearish mirror)
+        float move = math.abs(eY - sY)
+        if move > 0.0
+            float level = eY > sY ? eY - (move * 0.707) : eY + (move * 0.707)
+            float frac = math.abs(level - sY) / move
+            int k = sIdx + int(math.round(frac * (eIdx - sIdx)))
+            label d = label.new(xBase + k, level, "●", style = label.style_none, color = color.white, textcolor = color.white, size = size.tiny)
+            array.push(labelsArr, d)
+
+//+------------------------------------------------------------------+
+f_highest(array, count, start) =>
+    res = array.get(array, start)
+    for i = start - 1 to math.max(start - count + 1, 0)
+        if res < array.get(array, i)
+            res := array.get(array, i)
+    res
+
+//+------------------------------------------------------------------+
+f_lowest(array, count, start) =>
+    res = array.get(array, start)
+    for i = start - 1 to math.max(start - count + 1, 0)
+        if res > array.get(array, i)
+            res := array.get(array, i)
+    res
+
+//+------------------------------------------------------------------+
+//| Emulate array.resize() (Pine requires 'simple int' size; bar    |
+//| counts are 'series int', so we clear + push)                    |
+//+------------------------------------------------------------------+
+f_resize(arr, size) =>
+    array.clear(arr)
+    for i = 0 to size - 1
+        array.push(arr, 0.0)
+
+//+------------------------------------------------------------------+
+f_zigzag_calc(highArr, lowArr, ZigzagPeakBuffer, ZigzagBottomBuffer, ColorBuffer, HighMapBuffer, LowMapBuffer) =>
+    rates_total = array.size(lowArr)
+    //--- Sunya5: if(rates_total<100) return(0); (Pine has no return;
+    //    the whole calculation is wrapped in the inverse condition)
+    if rates_total >= 100
+        int start = InpDepth - 1
+        int extreme_counter = 0
+        int extreme_search = EXTREMUM
+        int last_high_pos = 0
+        int last_low_pos = 0
+        float val = 0.0
+        float res = 0.0
+        float cur_low = 0.0
+        float cur_high = 0.0
+        float last_high = 0.0
+        float last_low = 0.0
+        //--- ArrayInitialize(...) == Sunya5 prev_calculated==0 branch
+        for i = 0 to rates_total - 1
+            array.set(ZigzagPeakBuffer,   i, 0.0)
+            array.set(ZigzagBottomBuffer, i, 0.0)
+            array.set(HighMapBuffer,      i, 0.0)
+            array.set(LowMapBuffer,       i, 0.0)
+            array.set(ColorBuffer,        i, 0.0)
+        //--- searching for high and low extremes (Sunya5 loop)
+        for shift = start to rates_total - 1
+            //--- low (Sunya5: val=Lowest(low,InpDepth,shift))
+            val := f_lowest(lowArr, InpDepth, shift)
+            if val == last_low
+                val := 0.0
+            else
+                last_low := val
+                if array.get(lowArr, shift) - val > InpDeviation * _Point
+                    val := 0.0
+                else
+                    for back = InpBackstep to 1
+                        res := array.get(LowMapBuffer, shift - back)
+                        if res != 0.0 and res > val
+                            array.set(LowMapBuffer, shift - back, 0.0)
+            if array.get(lowArr, shift) == val
+                array.set(LowMapBuffer, shift, val)
+            else
+                array.set(LowMapBuffer, shift, 0.0)
+            //--- high (Sunya5: val=Highest(high,InpDepth,shift))
+            val := f_highest(highArr, InpDepth, shift)
+            if val == last_high
+                val := 0.0
+            else
+                last_high := val
+                if val - array.get(highArr, shift) > InpDeviation * _Point
+                    val := 0.0
+                else
+                    for back = InpBackstep to 1
+                        res := array.get(HighMapBuffer, shift - back)
+                        if res != 0.0 and res < val
+                            array.set(HighMapBuffer, shift - back, 0.0)
+            if array.get(highArr, shift) == val
+                array.set(HighMapBuffer, shift, val)
+            else
+                array.set(HighMapBuffer, shift, 0.0)
+        //--- set last values (Sunya5 block, kept 1:1)
+        if extreme_search == EXTREMUM
+            last_low := 0.0
+            last_high := 0.0
+        else
+            last_low := cur_low
+            last_high := cur_high
+        //--- final selection of extreme points for ZigZag (Sunya5 switch)
+        for shift = start to rates_total - 1
+            res := 0.0
+            if extreme_search == EXTREMUM
+                if last_low == 0.0 and last_high == 0.0
+                    if array.get(HighMapBuffer, shift) != 0.0
+                        last_high := array.get(highArr, shift)
+                        last_high_pos := shift
+                        extreme_search := BOTTOM
+                        array.set(ZigzagPeakBuffer, shift, last_high)
+                        array.set(ColorBuffer, shift, 0.0)
+                        res := 1.0
+                    if array.get(LowMapBuffer, shift) != 0.0
+                        last_low := array.get(lowArr, shift)
+                        last_low_pos := shift
+                        extreme_search := PEAK
+                        array.set(ZigzagBottomBuffer, shift, last_low)
+                        array.set(ColorBuffer, shift, 1.0)
+                        res := 1.0
+            else if extreme_search == PEAK
+                if array.get(LowMapBuffer, shift) != 0.0 and array.get(LowMapBuffer, shift) < last_low and array.get(HighMapBuffer, shift) == 0.0
+                    array.set(ZigzagBottomBuffer, last_low_pos, 0.0)
+                    last_low_pos := shift
+                    last_low := array.get(LowMapBuffer, shift)
+                    array.set(ZigzagBottomBuffer, shift, last_low)
+                    array.set(ColorBuffer, shift, 1.0)
+                    res := 1.0
+                if array.get(HighMapBuffer, shift) != 0.0 and array.get(LowMapBuffer, shift) == 0.0
+                    last_high := array.get(HighMapBuffer, shift)
+                    last_high_pos := shift
+                    array.set(ZigzagPeakBuffer, shift, last_high)
+                    array.set(ColorBuffer, shift, 0.0)
+                    extreme_search := BOTTOM
+                    res := 1.0
+            else // BOTTOM (case Bottom)
+                if array.get(HighMapBuffer, shift) != 0.0 and array.get(HighMapBuffer, shift) > last_high and array.get(LowMapBuffer, shift) == 0.0
+                    array.set(ZigzagPeakBuffer, last_high_pos, 0.0)
+                    last_high_pos := shift
+                    last_high := array.get(HighMapBuffer, shift)
+                    array.set(ZigzagPeakBuffer, shift, last_high)
+                    array.set(ColorBuffer, shift, 0.0)
+                if array.get(LowMapBuffer, shift) != 0.0 and array.get(HighMapBuffer, shift) == 0.0
+                    last_low := array.get(LowMapBuffer, shift)
+                    last_low_pos := shift
+                    array.set(ZigzagBottomBuffer, shift, last_low)
+                    array.set(ColorBuffer, shift, 1.0)
+                    extreme_search := PEAK
+
+//+------------------------------------------------------------------+
+var float[] highArr = array.new_float()
+var float[] lowArr  = array.new_float()
+
+var float[] PeakBuf     = array.new_float()
+var float[] BottomBuf   = array.new_float()
+var float[] ColBuf      = array.new_float()
+var float[] HighMapBuf  = array.new_float()
+var float[] LowMapBuf   = array.new_float()
+
+var float[] pk0  = array.new_float()
+var float[] bt0  = array.new_float()
+var float[] cl0  = array.new_float()
+var float[] hmp0 = array.new_float()
+var float[] lmp0 = array.new_float()
+
+
+var line[] drawnLines = array.new_line()
+var label[] labelArr = array.new_label()
+var float[] volArr = array.new_float()
+
+
+//--- rolling price window: each bar pushes its own high/low once and
+//    trims to the window (no history-referencing operators, so the
+//    max_bars_back runtime limit can never be exceeded)
+var int lastBarIdx = -1
+maxWin = 500
+if bar_index != lastBarIdx
+    lastBarIdx := bar_index
+    array.push(highArr, high)
+    array.push(lowArr, low)
+    array.push(volArr, volume)
+    if array.size(highArr) > maxWin
+        array.remove(highArr, 0)
+        array.remove(lowArr, 0)
+        array.remove(volArr, 0)
+
+//--- feature settings object (fixed defaults; no inputs)
+settings = Settings.new()
+settings.draw := true
+settings.upColor := bullColor
+settings.downColor := bearColor
+
+//--- recompute on the last bar and redraw
+if barstate.islast
+    //--- delete lines from previous run (for...in skips empty arrays)
+    for ln in drawnLines
+        line.delete(ln)
+    array.clear(drawnLines)
+    for lb in labelArr
+        label.delete(lb)
+    array.clear(labelArr)
+    n     = array.size(highArr) // simple int
+    xBase = bar_index - n + 1
+    if n >= 100 
+        //--- draw zigzag with features (blue / red)
+        f_resize(pk0, n)
+        f_resize(bt0, n)
+        f_resize(cl0, n)
+        f_resize(hmp0, n)
+        f_resize(lmp0, n)
+        f_zigzag_calc(highArr, lowArr, pk0, bt0, cl0, hmp0, lmp0)
+        f_draw_features(xBase, pk0, bt0, cl0, volArr, highArr, lowArr, settings, drawnLines, labelArr)
