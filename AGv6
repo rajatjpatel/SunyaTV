@@ -1,0 +1,156 @@
+//@version=6
+indicator("Astro-Gann Projections v6", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ============ INPUTS ============
+leftLen  = input.int(5, "Pivot Left",  minval=1, group="Anchor (Auto)")
+rightLen = input.int(5, "Pivot Right", minval=1, group="Anchor (Auto)")
+
+useManual = input.bool(false, "Use Manual Anchor (Override Auto)", group="Anchor (Manual)")
+manType   = input.string("Low", "Manual Anchor Type", options=["High", "Low"], group="Anchor (Manual)")
+inpYear   = input.int(2026, "Year",        group="Anchor (Manual)")
+inpMonth  = input.int(9,    "Month",       group="Anchor (Manual)")
+inpDay    = input.int(14,   "Day",         group="Anchor (Manual)")
+inpHour   = input.int(17,   "Hour (0-23)", group="Anchor (Manual)")
+inpMin    = input.int(0,    "Minute",      group="Anchor (Manual)")
+inpPrice  = input.float(28870.0, "Anchor Price", group="Anchor (Manual)")
+
+showGann   = input.bool(true, "Show Gann Levels (Horizontal)", group="Display")
+showTime   = input.bool(true, "Show Time Projections (Vertical)", group="Display")
+showAnchor = input.bool(true, "Show Anchor Vertical Line", group="Display")
+anchorTxt  = input.color(color.navy, "Anchor Label Text Color", group="Display")
+
+mode       = input.string("Auto", "Time Projection Mode", options=["Auto", "Earth Rotation 15°/h (Intraday)", "Planetary Velocity (Daily+)"], group="Time Projections")
+planet_str = input.string("Moon", "Planet (Planetary mode)", options=["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"], group="Time Projections")
+
+tzSel = input.string("Asia/Dubai", "Display / Manual-Anchor Timezone", options=["Exchange","UTC","Asia/Dubai","Asia/Tokyo","America/Chicago","America/New_York","Europe/London","Asia/Kolkata","Australia/Sydney"], group="Display")
+string tz = tzSel == "Exchange" ? syminfo.timezone : tzSel
+
+// ============ GLOBAL FUNCTIONS ============
+f_deg2rad(float d) =>
+    d * math.pi / 180.0
+
+f_planet_speed(string p, int t) =>
+    float T = (t / 86400000.0 + 2440587.5 - 2451545.0) / 36525.0
+    float s = 0.0
+    if p == "Sun"
+        float M = f_deg2rad(357.5291 + 35999.0503 * T)
+        s := 0.985607 + (1.9146 * math.cos(M) + 0.03998 * math.cos(2 * M)) * f_deg2rad(0.985607)
+    else if p == "Moon"
+        float Mm = f_deg2rad(134.9634 + 477198.8676 * T)
+        s := 13.176358 + 0.8 * math.cos(Mm)
+    else if p == "Mercury"
+        s := 1.383
+    else if p == "Venus"
+        s := 1.602
+    else if p == "Mars"
+        s := 0.524
+    else if p == "Jupiter"
+        s := 0.08308
+    else if p == "Saturn"
+        s := 0.03345
+    else if p == "Uranus"
+        s := 0.01172
+    else if p == "Neptune"
+        s := 0.00602
+    else if p == "Pluto"
+        s := 0.00398
+    s
+
+f_fmt(int t) =>
+    str.format_time(t, "MMM dd\nHH:mm", tz)
+
+// ============ ANCHOR DETECTION (NON-REPAINTING) ============
+ph = ta.pivothigh(high, leftLen, rightLen)
+pl = ta.pivotlow(low, leftLen, rightLen)
+
+var float anchorPrice  = na
+var int   anchorTime   = na
+var bool  anchorIsHigh = false
+var bool  hasAnchor    = false
+
+if useManual
+    anchorPrice  := inpPrice
+    anchorTime   := timestamp(tz, inpYear, inpMonth, inpDay, inpHour, inpMin, 0)
+    anchorIsHigh := manType == "High"
+    hasAnchor    := true
+else
+    if not na(ph)
+        anchorPrice  := ph
+        anchorTime   := time[rightLen]
+        anchorIsHigh := true
+        hasAnchor    := true
+    if not na(pl)
+        anchorPrice  := pl
+        anchorTime   := time[rightLen]
+        anchorIsHigh := false
+        hasAnchor    := true
+
+plotshape(not useManual and not na(ph), "Swing High", shape.triangledown, location.abovebar, color.red,   offset=-rightLen, size=size.small)
+plotshape(not useManual and not na(pl), "Swing Low",  shape.triangleup,   location.belowbar, color.green, offset=-rightLen, size=size.small)
+
+// ============ TIME PROJECTION MATH ============
+bool  useEarth = mode == "Earth Rotation 15°/h (Intraday)" or (mode == "Auto" and timeframe.isintraday)
+float msPerDeg = useEarth ? 240000.0 : (hasAnchor ? 86400000.0 / math.max(f_planet_speed(planet_str, anchorTime), 0.0001) : 240000.0)
+
+int t90  = hasAnchor ? anchorTime + math.round(90  * msPerDeg) : 0
+int t180 = hasAnchor ? anchorTime + math.round(180 * msPerDeg) : 0
+int t270 = hasAnchor ? anchorTime + math.round(270 * msPerDeg) : 0
+int t360 = hasAnchor ? anchorTime + math.round(360 * msPerDeg) : 0
+
+// ============ DRAWING ENGINE ============
+var line[]  hLines  = array.new<line>()
+var label[] hLabels = array.new<label>()
+var line[]  vLines  = array.new<line>()
+var label[] vLabels = array.new<label>()
+var line  anchorLine = na
+var label anchorLbl  = na
+
+color noBg = color.new(color.white, 100)
+
+if barstate.islast
+    while array.size(hLines) > 0
+        line.delete(array.pop(hLines))
+    while array.size(hLabels) > 0
+        label.delete(array.pop(hLabels))
+    while array.size(vLines) > 0
+        line.delete(array.pop(vLines))
+    while array.size(vLabels) > 0
+        label.delete(array.pop(vLabels))
+    line.delete(anchorLine)
+    label.delete(anchorLbl)
+
+    if hasAnchor
+        if showAnchor
+            anchorLine := line.new(anchorTime, high, anchorTime, low, xloc=xloc.bar_time, color=color.gray, width=1, style=line.style_dashed, extend=extend.both)
+            anchorLbl  := label.new(anchorTime, anchorIsHigh ? high : low, anchorIsHigh ? "▼ HIGH ANCHOR" : "▲ LOW ANCHOR", style=label.style_none, color=noBg, textcolor=anchorTxt, xloc=xloc.bar_time, yloc=anchorIsHigh ? yloc.abovebar : yloc.belowbar, size=size.small)
+
+        if showGann
+            int tfMs = timeframe.in_seconds() * 1000
+            int hEnd = time + 3 * tfMs
+            float bs   = math.sqrt(anchorPrice)
+            float r90  = math.pow(bs + 0.5, 2)
+            float r180 = math.pow(bs + 1.0, 2)
+            float r360 = math.pow(bs + 2.0, 2)
+            float s90  = math.pow(bs - 0.5, 2)
+            float s180 = math.pow(bs - 1.0, 2)
+
+            array.push(hLines, line.new(anchorTime, r90,  hEnd, r90,  xloc=xloc.bar_time, color=color.new(color.red, 20),    width=2))
+            array.push(hLabels, label.new(hEnd, r90,  "90° R  "  + str.tostring(r90,  format.mintick), style=label.style_none, color=noBg, textcolor=color.red,    xloc=xloc.bar_time, size=size.small))
+            array.push(hLines, line.new(anchorTime, r180, hEnd, r180, xloc=xloc.bar_time, color=color.new(color.orange, 20), width=2))
+            array.push(hLabels, label.new(hEnd, r180, "180° R  " + str.tostring(r180, format.mintick), style=label.style_none, color=noBg, textcolor=color.orange, xloc=xloc.bar_time, size=size.small))
+            array.push(hLines, line.new(anchorTime, r360, hEnd, r360, xloc=xloc.bar_time, color=color.new(color.purple, 20), width=2))
+            array.push(hLabels, label.new(hEnd, r360, "360° R  " + str.tostring(r360, format.mintick), style=label.style_none, color=noBg, textcolor=color.purple, xloc=xloc.bar_time, size=size.small))
+            array.push(hLines, line.new(anchorTime, s90,  hEnd, s90,  xloc=xloc.bar_time, color=color.new(color.green, 20),  width=2))
+            array.push(hLabels, label.new(hEnd, s90,  "90° S  "  + str.tostring(s90,  format.mintick), style=label.style_none, color=noBg, textcolor=color.green,  xloc=xloc.bar_time, size=size.small))
+            array.push(hLines, line.new(anchorTime, s180, hEnd, s180, xloc=xloc.bar_time, color=color.new(color.teal, 20),   width=2))
+            array.push(hLabels, label.new(hEnd, s180, "180° S  " + str.tostring(s180, format.mintick), style=label.style_none, color=noBg, textcolor=color.teal,   xloc=xloc.bar_time, size=size.small))
+
+        if showTime
+            array.push(vLines, line.new(t90,  high, t90,  low, xloc=xloc.bar_time, color=color.new(color.red, 30),    width=2, extend=extend.both))
+            array.push(vLabels, label.new(t90,  low, "90°\n"  + f_fmt(t90),  style=label.style_none, color=noBg, textcolor=color.red,    xloc=xloc.bar_time, size=size.small))
+            array.push(vLines, line.new(t180, high, t180, low, xloc=xloc.bar_time, color=color.new(color.orange, 30), width=2, extend=extend.both))
+            array.push(vLabels, label.new(t180, low, "180°\n" + f_fmt(t180), style=label.style_none, color=noBg, textcolor=color.orange, xloc=xloc.bar_time, size=size.small))
+            array.push(vLines, line.new(t270, high, t270, low, xloc=xloc.bar_time, color=color.new(color.yellow, 30), width=2, extend=extend.both))
+            array.push(vLabels, label.new(t270, low, "270°\n" + f_fmt(t270), style=label.style_none, color=noBg, textcolor=color.yellow, xloc=xloc.bar_time, size=size.small))
+            array.push(vLines, line.new(t360, high, t360, low, xloc=xloc.bar_time, color=color.new(color.green, 30),  width=2, extend=extend.both))
+            array.push(vLabels, label.new(t360, low, "360°\n" + f_fmt(t360), style=label.style_none, color=noBg, textcolor=color.green,  xloc=xloc.bar_time, size=size.small))
