@@ -1,0 +1,489 @@
+//@version=6
+indicator('SMC Analytics', overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+// ============================================================================
+// ==== General ====
+// ============================================================================
+grp_gen = '==== General ===='
+mode = input.string('Historical', 'Mode', options = ['Historical', 'Present'], group = grp_gen)
+style = input.string('Colored', 'Style', options = ['Colored', 'Monochrome'], group = grp_gen)
+enableScaleGuard = input.bool(true, 'Chart Auto-Scale Protection Guard', group = grp_gen, tooltip = 'Prevents off-screen zones from squishing chart candles')
+
+// ============================================================================
+// ==== Internal Structure ====
+// ============================================================================
+grp_int = '==== Internal Structure ===='
+showInt = input.bool(true, 'Show Internal Structure', group = grp_int)
+c_int_bull = input.color(#3CB371, 'Internal Bullish Color', group = grp_int)
+c_int_bear = input.color(#FF0000, 'Internal Bearish Color', group = grp_int)
+confluenceFlt = input.bool(true, 'Confluence Filter', group = grp_int)
+pivotInt = input.int(5, 'Internal Structure Lookback (>=2)', minval = 2, group = grp_int)
+confWickRatio = input.float(1.0, 'Confluence Wick Ratio', minval = 0.0, group = grp_int)
+
+// ============================================================================
+// ==== Swing Structure ====
+// ============================================================================
+grp_sw = '==== Swing Structure ===='
+showSw = input.bool(true, 'Show Swing Structure', group = grp_sw)
+c_sw_bull = input.color(#3CB371, 'Swing Bullish Color', group = grp_sw)
+c_sw_bear = input.color(#FF0000, 'Swing Bearish Color', group = grp_sw)
+breakConfirm = input.string('Close', 'Break Confirmation', options = ['Close', 'High/Low'], group = grp_sw)
+pivotSw = input.int(50, 'Swing Lookback Length (>=10)', minval = 10, group = grp_sw)
+showHHHL = input.bool(false, 'Show HH/HL/LH/LL Labels', group = grp_sw)
+showStrongWeak = input.bool(true, 'Show Strong/Weak High/Low', group = grp_sw)
+
+// ============================================================================
+// ==== Order Blocks ====
+// ============================================================================
+grp_ob = '==== Order Blocks ===='
+showIntOB = input.bool(true, 'Internal Order Blocks', group = grp_ob)
+maxIntOBCount = input.int(5, 'Internal OB Max Count (1-20)', minval = 1, maxval = 20, group = grp_ob)
+c_int_ob_bull = input.color(#80e6a3, 'Internal Bullish OB Color', group = grp_ob)
+c_int_ob_bear = input.color(#b4a3e6, 'Internal Bearish OB Color', group = grp_ob)
+
+showSwOB = input.bool(true, 'Swing Order Blocks', group = grp_ob)
+maxSwOBCount = input.int(5, 'Swing OB Max Count (1-20)', minval = 1, maxval = 20, group = grp_ob)
+c_sw_ob_bull = input.color(#80e6a3, 'Swing Bullish OB Color', group = grp_ob)
+c_sw_ob_bear = input.color(#b4a3e6, 'Swing Bearish OB Color', group = grp_ob)
+
+obVolFilter = input.bool(true, 'OB Volatility Filter (OBF_ATR)', group = grp_ob)
+atrMultOB = input.float(2.0, 'High-Vol Bar ATR Multiplier', minval = 0.1, group = grp_ob)
+showOBLabels = input.bool(true, 'Show Order Block Labels', group = grp_ob)
+zoneOpacity = input.int(50, 'Zone Opacity % (0-100)', minval = 0, maxval = 100, group = grp_ob)
+
+// ============================================================================
+// ==== Equal Highs / Lows ====
+// ============================================================================
+grp_eq = '==== Equal Highs / Lows ===='
+showEQ = input.bool(true, 'Equal High/Low', group = grp_eq)
+eqBarsConf = input.int(3, 'Bars Confirmation (>=1)', minval = 1, group = grp_eq)
+eqAtrThresh = input.float(0.1, 'ATR Threshold (0.0-0.5)', minval = 0.0, maxval = 0.5, group = grp_eq)
+
+// ============================================================================
+// ==== Fair Value Gaps ====
+// ============================================================================
+grp_fvg = '==== Fair Value Gaps ===='
+showFVG = input.bool(true, 'Fair Value Gaps', group = grp_fvg)
+maxFVGCount = input.int(10, 'Max Active FVG Count (1-30)', minval = 1, maxval = 30, group = grp_fvg)
+autoThresh = input.bool(true, 'Auto Threshold', group = grp_fvg)
+autoSens = input.float(2.0, 'Auto Threshold Sensitivity', minval = 0.1, group = grp_fvg)
+minGapPts = input.float(15.0, 'Min Gap Size Filter (points)', minval = 0.0, group = grp_fvg)
+c_fvg_bull = input.color(#80e6a3, 'Bullish FVG Color', group = grp_fvg)
+c_fvg_bear = input.color(#b4a3e6, 'Bearish FVG Color', group = grp_fvg)
+extendFVGBars = input.int(2, 'Extend FVG (bars)', minval = 0, group = grp_fvg)
+showFVGLabels = input.bool(true, 'Show FVG Labels', group = grp_fvg)
+
+// ============================================================================
+// ==== HTF Price Levels ====
+// ============================================================================
+grp_htf = '==== HTF Price Levels ===='
+showDailyLvl = input.bool(true, 'Daily Levels (PDH/PDL)', group = grp_htf)
+showWeeklyLvl = input.bool(true, 'Weekly Levels (PWH/PWL)', group = grp_htf)
+showMthlyLvl = input.bool(true, 'Monthly Levels (PMH/PML)', group = grp_htf)
+c_htf_lvl = input.color(#ff7f0e, 'HTF Level Color', group = grp_htf)
+
+// ============================================================================
+// ==== Premium / Discount Zones ====
+// ============================================================================
+grp_pd = '==== Premium / Discount Zones ===='
+showPremDisc = input.bool(true, 'Premium/Discount Zones', group = grp_pd)
+c_prem_zone = input.color(#b4a3e6, 'Premium Zone Color', group = grp_pd)
+c_eq_zone = input.color(#888888, 'Equilibrium Zone Color', group = grp_pd)
+c_disc_zone = input.color(#80e6a3, 'Discount Zone Color', group = grp_pd)
+
+// ============================================================================
+// MEMORY OBJECT TYPES & SCALE GUARD CALCULATIONS
+// ============================================================================
+type OrderBlock
+	box obBox
+	float topVal
+	float botVal
+	int leftIdx
+	bool isBullish
+
+type FairValueGap
+	box fvgBox
+	float topVal
+	float botVal
+	int leftIdx
+	bool isBullish
+
+var array<OrderBlock> activeOBs = array.new<OrderBlock>()
+var array<FairValueGap> activeFVGs = array.new<FairValueGap>()
+
+atrVal = ta.atr(14)
+hi50 = ta.highest(high, 50)
+lo50 = ta.lowest(low, 50)
+
+// Active Viewport Scale Protection Boundaries
+viewMargin = atrVal * 4.0
+viewTop = ta.highest(high, 60) + viewMargin
+viewBot = ta.lowest(low, 60) - viewMargin
+
+isWithinView(float topPrice, float botPrice) =>
+    not enableScaleGuard or topPrice >= viewBot and botPrice <= viewTop
+
+isLevelInView(float priceLevel) =>
+    not na(priceLevel) and (not enableScaleGuard or priceLevel >= viewBot and priceLevel <= viewTop)
+
+// ============================================================================
+// STRUCTURE ENGINE (INTERNAL & SWING)
+// ============================================================================
+phInt = ta.pivothigh(high, pivotInt, pivotInt)
+plInt = ta.pivotlow(low, pivotInt, pivotInt)
+
+phSw = ta.pivothigh(high, pivotSw, pivotSw)
+plSw = ta.pivotlow(low, pivotSw, pivotSw)
+
+var float lastPH_Sw = na
+var float lastPL_Sw = na
+var int lastPH_Sw_idx = na
+var int lastPL_Sw_idx = na
+var int swingTrend = 0
+
+// NEW: guards that remember which swing pivot (by its index) has already
+// triggered a BOS/CHoCH + Swing OB, so the same pivot can't keep re-firing
+// on every subsequent bar while price stays beyond it.
+var int brokenPH_Sw_idx = na
+var int brokenPL_Sw_idx = na
+
+var float lastPH_Int = na
+var float lastPL_Int = na
+var int lastPH_Int_idx = na
+var int lastPL_Int_idx = na
+
+// --- Internal Structure ---
+if showInt
+    if not na(phInt)
+        lastPH_Int := phInt
+        lastPH_Int_idx := bar_index - pivotInt
+        lastPH_Int_idx
+    if not na(plInt)
+        lastPL_Int := plInt
+        lastPL_Int_idx := bar_index - pivotInt
+        lastPL_Int_idx
+
+    float breakVal_bull = breakConfirm == 'Close' ? close : high
+    float breakVal_bear = breakConfirm == 'Close' ? close : low
+
+    if not na(lastPH_Int) and breakVal_bull > lastPH_Int
+        line.new(lastPH_Int_idx, lastPH_Int, bar_index, lastPH_Int, color = c_int_bull, style = line.style_dashed, width = 1)
+        label.new(math.round((lastPH_Int_idx + bar_index) / 2), lastPH_Int, 'iBOS', color = color.new(color.white, 100), textcolor = c_int_bull, style = label.style_label_down, size = size.tiny)
+        lastPH_Int := na
+        lastPH_Int
+
+    if not na(lastPL_Int) and breakVal_bear < lastPL_Int
+        line.new(lastPL_Int_idx, lastPL_Int, bar_index, lastPL_Int, color = c_int_bear, style = line.style_dashed, width = 1)
+        label.new(math.round((lastPL_Int_idx + bar_index) / 2), lastPL_Int, 'iBOS', color = color.new(color.white, 100), textcolor = c_int_bear, style = label.style_label_up, size = size.tiny)
+        lastPL_Int := na
+        lastPL_Int
+
+// --- Swing Structure & Labels ---
+if not na(phSw)
+    if showHHHL
+        string tag = not na(lastPH_Sw) ? phSw > lastPH_Sw ? 'HH' : 'LH' : 'SH'
+        label.new(bar_index - pivotSw, phSw, tag, color = color.new(color.white, 100), textcolor = c_sw_bear, style = label.style_label_down, size = size.small)
+    lastPH_Sw := phSw
+    lastPH_Sw_idx := bar_index - pivotSw
+    lastPH_Sw_idx
+
+if not na(plSw)
+    if showHHHL
+        string tag = not na(lastPL_Sw) ? plSw > lastPL_Sw ? 'HL' : 'LL' : 'SL'
+        label.new(bar_index - pivotSw, plSw, tag, color = color.new(color.white, 100), textcolor = c_sw_bull, style = label.style_label_up, size = size.small)
+    lastPL_Sw := plSw
+    lastPL_Sw_idx := bar_index - pivotSw
+    lastPL_Sw_idx
+
+// --- Swing Structure Breaks (BOS / CHoCH) & OB Creation ---
+float swBreakVal_bull = breakConfirm == 'Close' ? close : high
+float swBreakVal_bear = breakConfirm == 'Close' ? close : low
+
+// NOTE: added "and lastPH_Sw_idx != brokenPH_Sw_idx" so this block only fires
+// ONCE for a given swing pivot, instead of re-firing on every bar that price
+// remains beyond lastPH_Sw. This is what was causing stacked/overlapping
+// BOS labels, lines and duplicate Swing Order Blocks. lastPH_Sw itself is
+// left untouched so Premium/Discount and Strong/Weak logic further below
+// keep working exactly as before.
+if showSw and not na(lastPH_Sw) and swBreakVal_bull > lastPH_Sw and lastPH_Sw_idx != brokenPH_Sw_idx
+    string txt = swingTrend == -1 ? 'CHoCH' : 'BOS'
+    line.new(lastPH_Sw_idx, lastPH_Sw, bar_index, lastPH_Sw, color = c_sw_bull, style = line.style_solid, width = 2)
+    label.new(math.round((lastPH_Sw_idx + bar_index) / 2), lastPH_Sw, txt, color = color.new(color.white, 100), textcolor = c_sw_bull, style = label.style_label_down, size = size.small)
+
+    // Bullish OB
+    if showSwOB and (not obVolFilter or high[0] - low[0] >= atrVal * atrMultOB)
+        int obOffset = 1
+        for i = 1 to 20 by 1
+            if close[i] < open[i]
+                obOffset := i
+                break
+        float tVal = high[obOffset]
+        float bVal = low[obOffset]
+        int lIdx = bar_index - obOffset
+        color cBox = color.new(c_sw_ob_bull, zoneOpacity)
+        string labelText = showOBLabels ? 'Bullish OB' : ''
+        box bx = box.new(left = lIdx, top = tVal, right = bar_index + extendFVGBars, bottom = bVal, bgcolor = cBox, border_color = c_sw_bull, text = labelText, text_color = color.black, text_size = size.small, text_halign = text.align_center, text_valign = text.align_center)
+        array.push(activeOBs, OrderBlock.new(bx, tVal, bVal, lIdx, true))
+        if array.size(activeOBs) > maxSwOBCount
+            OrderBlock oldOB = array.shift(activeOBs)
+            box.delete(oldOB.obBox)
+
+    brokenPH_Sw_idx := lastPH_Sw_idx
+    swingTrend := 1
+    swingTrend
+
+// NOTE: same fix mirrored for the bearish break using brokenPL_Sw_idx.
+if showSw and not na(lastPL_Sw) and swBreakVal_bear < lastPL_Sw and lastPL_Sw_idx != brokenPL_Sw_idx
+    string txt = swingTrend == 1 ? 'CHoCH' : 'BOS'
+    line.new(lastPL_Sw_idx, lastPL_Sw, bar_index, lastPL_Sw, color = c_sw_bear, style = line.style_solid, width = 2)
+    label.new(math.round((lastPL_Sw_idx + bar_index) / 2), lastPL_Sw, txt, color = color.new(color.white, 100), textcolor = c_sw_bear, style = label.style_label_up, size = size.small)
+
+    // Bearish OB
+    if showSwOB and (not obVolFilter or high[0] - low[0] >= atrVal * atrMultOB)
+        int obOffset = 1
+        for i = 1 to 20 by 1
+            if close[i] > open[i]
+                obOffset := i
+                break
+        float tVal = high[obOffset]
+        float bVal = low[obOffset]
+        int lIdx = bar_index - obOffset
+        color cBox = color.new(c_sw_ob_bear, zoneOpacity)
+        string labelText = showOBLabels ? 'Bearish OB' : ''
+        box bx = box.new(left = lIdx, top = tVal, right = bar_index + extendFVGBars, bottom = bVal, bgcolor = cBox, border_color = c_sw_bear, text = labelText, text_color = color.black, text_size = size.small, text_halign = text.align_center, text_valign = text.align_center)
+        array.push(activeOBs, OrderBlock.new(bx, tVal, bVal, lIdx, false))
+        if array.size(activeOBs) > maxSwOBCount
+            OrderBlock oldOB = array.shift(activeOBs)
+            box.delete(oldOB.obBox)
+
+    brokenPL_Sw_idx := lastPL_Sw_idx
+    swingTrend := -1
+    swingTrend
+
+// --- SCALE-PROTECTED OB UPDATE ENGINE ---
+if array.size(activeOBs) > 0
+    for i = array.size(activeOBs) - 1 to 0 by 1
+        OrderBlock ob = array.get(activeOBs, i)
+        if isWithinView(ob.topVal, ob.botVal)
+            box.set_left(ob.obBox, math.max(ob.leftIdx, bar_index - 35))
+            box.set_right(ob.obBox, bar_index + extendFVGBars)
+
+        bool isMitigated = ob.isBullish ? low < ob.botVal : high > ob.topVal
+        if isMitigated
+            if mode == 'Present'
+                box.delete(ob.obBox)
+            array.remove(activeOBs, i)
+
+// ============================================================================
+// FAIR VALUE GAPS (FVG) ENGINE
+// ============================================================================
+if showFVG
+    float gapPointsBull = (low[0] - high[2]) / syminfo.pointvalue
+    float gapPointsBear = (low[2] - high[0]) / syminfo.pointvalue
+
+    bool isBull = low[0] > high[2] and close[1] > high[2] and gapPointsBull >= minGapPts
+    bool isBear = high[0] < low[2] and close[1] < low[2] and gapPointsBear >= minGapPts
+
+    if isBull
+        string fvgText = showFVGLabels ? 'FVG' : ''
+        box bx = box.new(left = bar_index - 2, top = low[0], right = bar_index + extendFVGBars, bottom = high[2], bgcolor = color.new(c_fvg_bull, zoneOpacity), border_color = c_int_bull, text = fvgText, text_color = #006400, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+        array.push(activeFVGs, FairValueGap.new(bx, low[0], high[2], bar_index - 2, true))
+
+    if isBear
+        string fvgText = showFVGLabels ? 'FVG' : ''
+        box bx = box.new(left = bar_index - 2, top = high[2], right = bar_index + extendFVGBars, bottom = low[2], bgcolor = color.new(c_fvg_bear, zoneOpacity), border_color = c_int_bear, text = fvgText, text_color = #8B0000, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+        array.push(activeFVGs, FairValueGap.new(bx, high[2], low[2], bar_index - 2, false))
+
+    if array.size(activeFVGs) > maxFVGCount
+        FairValueGap oldFVG = array.shift(activeFVGs)
+        box.delete(oldFVG.fvgBox)
+
+// --- SCALE-PROTECTED FVG UPDATE ENGINE ---
+if array.size(activeFVGs) > 0
+    for i = array.size(activeFVGs) - 1 to 0 by 1
+        FairValueGap fvg = array.get(activeFVGs, i)
+        if isWithinView(fvg.topVal, fvg.botVal)
+            box.set_left(fvg.fvgBox, math.max(fvg.leftIdx, bar_index - 35))
+            box.set_right(fvg.fvgBox, bar_index + extendFVGBars)
+        bool filled = fvg.isBullish ? low < fvg.botVal : high > fvg.topVal
+        if filled
+            if mode == 'Present'
+                box.delete(fvg.fvgBox)
+            array.remove(activeFVGs, i)
+
+// ============================================================================
+// EQUAL HIGHS (EQH) & EQUAL LOWS (EQL) ENGINE
+// ============================================================================
+var float pPH = na
+var int pPH_idx = na
+var float pPL = na
+var int pPL_idx = na
+
+if showEQ and not na(phSw)
+    if not na(pPH) and math.abs(phSw - pPH) <= eqAtrThresh * atrVal
+        line.new(pPH_idx, pPH, bar_index - pivotSw, phSw, color = c_sw_bear, style = line.style_dotted, width = 1)
+        label.new(math.round((pPH_idx + bar_index - pivotSw) / 2), phSw, 'EQH', color = color.new(color.white, 100), textcolor = c_sw_bear, style = label.style_label_down, size = size.tiny)
+    pPH := phSw
+    pPH_idx := bar_index - pivotSw
+    pPH_idx
+
+if showEQ and not na(plSw)
+    if not na(pPL) and math.abs(plSw - pPL) <= eqAtrThresh * atrVal
+        line.new(pPL_idx, pPL, bar_index - pivotSw, plSw, color = c_sw_bull, style = line.style_dotted, width = 1)
+        label.new(math.round((pPL_idx + bar_index - pivotSw) / 2), plSw, 'EQL', color = color.new(color.white, 100), textcolor = c_sw_bull, style = label.style_label_up, size = size.tiny)
+    pPL := plSw
+    pPL_idx := bar_index - pivotSw
+    pPL_idx
+
+// ============================================================================
+// HTF PRICE LEVELS (PDH/PDL, PWH/PWL, PMH/PML)
+// ============================================================================
+isIntradayOrDaily = timeframe.isintraday or timeframe.isdaily
+pdh = request.security(syminfo.tickerid, 'D', high[1], lookahead = barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, 'D', low[1], lookahead = barmerge.lookahead_on)
+
+pwh = request.security(syminfo.tickerid, 'W', high[1], lookahead = barmerge.lookahead_on)
+pwl = request.security(syminfo.tickerid, 'W', low[1], lookahead = barmerge.lookahead_on)
+
+pmh = request.security(syminfo.tickerid, 'M', high[1], lookahead = barmerge.lookahead_on)
+pml = request.security(syminfo.tickerid, 'M', low[1], lookahead = barmerge.lookahead_on)
+
+var line linePDH = na
+var line linePDL = na
+var label lblPDH = na
+var label lblPDL = na
+var line linePWH = na
+var line linePWL = na
+var label lblPWH = na
+var label lblPWL = na
+var line linePMH = na
+var line linePML = na
+var label lblPMH = na
+var label lblPML = na
+
+// NEW: per-tier horizontal offsets. Previously every tier's line/label was
+// anchored to the same "bar_index + 3" point, so whenever a Daily/Weekly/
+// Monthly level sat at a similar price, their labels rendered on top of
+// each other. Staggering the right edge per tier keeps each set readable
+// as its own "column" even when the price levels coincide, without
+// changing any of the level values or in-view logic.
+int htfBaseGap = 3
+int htfTierStep = 15
+int pdhRight = bar_index + htfBaseGap
+int pwhRight = bar_index + htfBaseGap + htfTierStep
+int pmhRight = bar_index + htfBaseGap + htfTierStep * 2
+
+if barstate.islast
+    // Daily High & Low
+    if showDailyLvl and isIntradayOrDaily
+        line.delete(linePDH)
+        line.delete(linePDL)
+        label.delete(lblPDH)
+        label.delete(lblPDL)
+        if isLevelInView(pdh)
+            linePDH := line.new(bar_index - 15, pdh, pdhRight, pdh, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPDH := label.new(pdhRight, pdh, 'PDH', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPDH
+        if isLevelInView(pdl)
+            linePDL := line.new(bar_index - 15, pdl, pdhRight, pdl, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPDL := label.new(pdhRight, pdl, 'PDL', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPDL
+
+    // Weekly High & Low
+    if showWeeklyLvl
+        line.delete(linePWH)
+        line.delete(linePWL)
+        label.delete(lblPWH)
+        label.delete(lblPWL)
+        if isLevelInView(pwh)
+            linePWH := line.new(bar_index - 15, pwh, pwhRight, pwh, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPWH := label.new(pwhRight, pwh, 'PWH', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPWH
+        if isLevelInView(pwl)
+            linePWL := line.new(bar_index - 15, pwl, pwhRight, pwl, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPWL := label.new(pwhRight, pwl, 'PWL', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPWL
+
+    // Monthly High & Low
+    if showMthlyLvl
+        line.delete(linePMH)
+        line.delete(linePML)
+        label.delete(lblPMH)
+        label.delete(lblPML)
+        if isLevelInView(pmh)
+            linePMH := line.new(bar_index - 15, pmh, pmhRight, pmh, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPMH := label.new(pmhRight, pmh, 'PMH', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPMH
+        if isLevelInView(pml)
+            linePML := line.new(bar_index - 15, pml, pmhRight, pml, color = c_htf_lvl, style = line.style_solid, width = 1)
+            lblPML := label.new(pmhRight, pml, 'PML', color = color.new(color.white, 100), textcolor = c_htf_lvl, style = label.style_label_left, size = size.small)
+            lblPML
+
+// ============================================================================
+// PREMIUM / DISCOUNT ZONES & STRONG/WEAK HIGH/LOW
+// ============================================================================
+var box premBox = na
+var box discBox = na
+var line lineEquilibrium = na
+var label lblEquilibrium = na
+var line strongLine = na
+var label strongLbl = na
+var line weakLine = na
+var label weakLbl = na
+
+if barstate.islast
+    box.delete(premBox)
+    box.delete(discBox)
+    line.delete(lineEquilibrium)
+    label.delete(lblEquilibrium)
+    line.delete(strongLine)
+    label.delete(strongLbl)
+    line.delete(weakLine)
+    label.delete(weakLbl)
+
+    float activeHigh = not na(lastPH_Sw) ? lastPH_Sw : hi50
+    float activeLow = not na(lastPL_Sw) ? lastPL_Sw : lo50
+    float eqLevel = (activeHigh + activeLow) / 2.0
+
+    // Clamp box bounds to viewport to prevent scale distortion
+    float clampHigh = enableScaleGuard ? math.min(activeHigh, viewTop) : activeHigh
+    float clampLow = enableScaleGuard ? math.max(activeLow, viewBot) : activeLow
+    float clampEq = math.max(math.min(eqLevel, clampHigh), clampLow)
+
+    // Premium & Discount Zones
+    if showPremDisc
+        int startIdx = math.max(bar_index - 20, math.min(not na(lastPH_Sw_idx) ? lastPH_Sw_idx : bar_index - 20, not na(lastPL_Sw_idx) ? lastPL_Sw_idx : bar_index - 20))
+        int endIdx = bar_index + 3
+
+        if clampHigh > clampEq
+            premBox := box.new(left = startIdx, top = clampHigh, right = endIdx, bottom = clampEq, bgcolor = color.new(c_prem_zone, 85), border_color = color.new(c_prem_zone, 60), text = 'Premium Zone', text_color = c_prem_zone, text_size = size.small, text_halign = text.align_center, text_valign = text.align_center)
+            premBox
+        if clampEq > clampLow
+            discBox := box.new(left = startIdx, top = clampEq, right = endIdx, bottom = clampLow, bgcolor = color.new(c_disc_zone, 85), border_color = color.new(c_disc_zone, 60), text = 'Discount Zone', text_color = c_disc_zone, text_size = size.small, text_halign = text.align_center, text_valign = text.align_center)
+            discBox
+
+        if isLevelInView(eqLevel)
+            lineEquilibrium := line.new(startIdx, eqLevel, endIdx, eqLevel, color = c_eq_zone, style = line.style_solid, width = 1)
+            lblEquilibrium := label.new(endIdx, eqLevel, 'Equilibrium (50%)', color = color.new(color.white, 100), textcolor = c_eq_zone, style = label.style_label_left, size = size.small)
+            lblEquilibrium
+
+    // Strong / Weak High & Low
+    if showStrongWeak
+        if swingTrend == 1 // Bullish Trend -> Protected Strong Low, Target Weak High
+            if isLevelInView(lastPL_Sw)
+                strongLine := line.new(bar_index - 20, lastPL_Sw, bar_index + 3, lastPL_Sw, color = c_sw_bull, style = line.style_solid, width = 1)
+                strongLbl := label.new(bar_index + 3, lastPL_Sw, 'Strong Low', color = color.new(color.white, 100), textcolor = c_sw_bull, style = label.style_label_left, size = size.small)
+                strongLbl
+            if isLevelInView(lastPH_Sw)
+                weakLine := line.new(bar_index - 20, lastPH_Sw, bar_index + 3, lastPH_Sw, color = c_sw_bear, style = line.style_dashed, width = 1)
+                weakLbl := label.new(bar_index + 3, lastPH_Sw, 'Weak High', color = color.new(color.white, 100), textcolor = c_sw_bear, style = label.style_label_left, size = size.small)
+                weakLbl
+        else if swingTrend == -1 // Bearish Trend -> Protected Strong High, Target Weak Low
+            if isLevelInView(lastPH_Sw)
+                strongLine := line.new(bar_index - 20, lastPH_Sw, bar_index + 3, lastPH_Sw, color = c_sw_bear, style = line.style_solid, width = 1)
+                strongLbl := label.new(bar_index + 3, lastPH_Sw, 'Strong High', color = color.new(color.white, 100), textcolor = c_sw_bear, style = label.style_label_left, size = size.small)
+                strongLbl
+            if isLevelInView(lastPL_Sw)
+                weakLine := line.new(bar_index - 20, lastPL_Sw, bar_index + 3, lastPL_Sw, color = c_sw_bull, style = line.style_dashed, width = 1)
+                weakLbl := label.new(bar_index + 3, lastPL_Sw, 'Weak Low', color = color.new(color.white, 100), textcolor = c_sw_bull, style = label.style_label_left, size = size.small)
+                weakLbl
