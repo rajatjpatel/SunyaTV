@@ -1,0 +1,393 @@
+//@version=6
+indicator("XX", overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+type Settings
+    float  devThreshold               = 5.0
+    int    depth                      = 10
+    color  bullishColor               = #0000FF
+    color  bearishColor               = #FF0000
+    bool   projectionPivots           = true
+    bool   displayReversalPrice       = true
+    bool   displayCumulativeVolume    = true
+    bool   displayReversalPriceChange = true
+    string differencePriceMode        = "Absolute"
+    bool   draw                       = true
+    bool   allowZigZagOnOneBar        = true
+    bool   showFibRetracement         = true
+    string fibMidStyle                = "Dashed"
+    color  fibColor                   = #FFA500
+    bool   showFibRatioLabels         = true
+    float  fibTolerance               = 0.05
+
+type Pivot
+    line        ln
+    label       lb
+    bool        isHigh
+    float       vol
+    chart.point start
+    chart.point end
+    string      fibText
+    array<line> fibLines
+
+type ZigZag
+    Settings     settings
+    array<Pivot> pivots
+    float        sumVol     = 0
+    Pivot        projection = na
+
+findPivotPoint(series float source, series int depth, simple bool isHigh) =>
+    float pivotPrice = nz(source[depth])
+    if depth == 0
+        chart.point.new(time, bar_index, pivotPrice)
+    else if depth * 2 <= bar_index
+        bool isFound = true
+        for i = 0 to depth - 1
+            if (isHigh and source[i] > pivotPrice) or (not isHigh and source[i] < pivotPrice)
+                isFound := false
+                break
+        for i = depth + 1 to 2 * depth
+            if (isHigh and source[i] >= pivotPrice) or (not isHigh and source[i] <= pivotPrice)
+                isFound := false
+                break
+        if isFound
+            chart.point.new(time[depth], bar_index[depth], pivotPrice)
+
+calcDev(series float start, series float end) =>
+    float result = 100 * (end - start) / math.abs(start)
+
+priceRotationDiff(series float start, series float end, Settings settings) =>
+    float  diff    = end - start
+    string sign    = math.sign(diff) > 0 ? "+" : ""
+    string diffStr = switch settings.differencePriceMode
+        "Absolute" => str.tostring(diff, format.mintick)
+        =>            str.tostring(diff * 100 / start, format.percent)
+    string result  = str.format("({0}{1})", sign, diffStr)
+
+priceRotationAggregate(series float start, series float end, series float vol, series string fibText, Settings settings) =>
+    string result = ""
+    if not na(fibText)
+        result += fibText + "\n"
+    if settings.displayReversalPrice
+        result += str.tostring(end, format.mintick) + " "
+    if settings.displayReversalPriceChange
+        result += priceRotationDiff(start, end, settings) + " "
+    if settings.displayCumulativeVolume
+        result += "\n" + str.tostring(vol, format.volume)
+    result
+
+makePivotLabel(series bool isHigh, chart.point point, series string fibText, Settings settings) =>
+    if settings.displayReversalPrice or settings.displayReversalPriceChange or settings.displayCumulativeVolume or not na(fibText)
+        [yloc, txtColor] = switch
+            isHigh => [yloc.abovebar, color.green]
+            =>        [yloc.belowbar, color.red]
+        label.new(point, style = label.style_none, xloc = xloc.bar_time, yloc = yloc, textcolor = txtColor)
+
+getFibLevel(series float ratio, series float tolerance) =>
+    var array<float> ratios = array.from(0.236, 0.382, 0.5, 0.618, 0.707, 0.786, 0.886, 1.0, 1.13, 1.272, 1.382, 1.414, 1.618, 2.0, 2.236, 2.618, 3.14, 3.618, 4.236, 4.618)
+    string result = na
+    float bestDiff = tolerance
+    for r in ratios
+        float diff = math.abs(ratio - r)
+        if diff <= tolerance and diff <= bestDiff
+            bestDiff := diff
+            result := "F " + str.tostring(r * 100, "#.##") + "%"
+    result
+
+method deleteFibLines(Pivot this) =>
+    if not na(this.fibLines)
+        for l in this.fibLines
+            if not na(l)
+                l.delete()
+    this.fibLines := array.new<line>()
+
+method drawFibLines(Pivot this, Settings settings) =>
+    float diff = this.end.price - this.start.price
+    float lvl382 = this.end.price - diff * 0.382
+    float lvl500 = this.end.price - diff * 0.5
+    float lvl618 = this.end.price - diff * 0.618
+    float lvl786 = this.end.price - diff * 0.786
+    midStyle = switch settings.fibMidStyle
+        "Dashed" => line.style_dashed
+        "Dotted" => line.style_dotted
+        =>          line.style_solid
+    array<line> lines = array.new<line>()
+    lines.push(line.new(this.start.time, lvl382, this.end.time, lvl382, xloc = xloc.bar_time, extend = extend.right, color = color.new(settings.fibColor, 10), style = line.style_solid, width = 1))
+    lines.push(line.new(this.start.time, lvl500, this.end.time, lvl500, xloc = xloc.bar_time, extend = extend.right, color = settings.fibColor, style = midStyle, width = 1))
+    lines.push(line.new(this.start.time, lvl618, this.end.time, lvl618, xloc = xloc.bar_time, extend = extend.right, color = settings.fibColor, style = midStyle, width = 1))
+    lines.push(line.new(this.start.time, lvl786, this.end.time, lvl786, xloc = xloc.bar_time, extend = extend.right, color = color.new(settings.fibColor, 10), style = line.style_solid, width = 1))
+    this.fibLines := lines
+
+method updatePivot(Pivot this, chart.point end, series float vol, Settings settings, simple bool isProjection = false) =>
+    this.end := end
+    this.vol := vol
+    if not na(this.lb)
+        this.lb.set_point(this.end)
+        this.lb.set_text(priceRotationAggregate(this.start.price, this.end.price, this.vol, this.fibText, settings))
+    this.ln.set_second_point(this.end)
+    if settings.showFibRetracement and not isProjection
+        this.deleteFibLines()
+        if this.start.price != this.end.price
+            this.drawFibLines(settings)
+
+newPivot(
+    chart.point start, chart.point end, series float vol, series bool isHigh, series string fibText, Settings settings,
+    simple bool isProjection = false
+) =>
+    color lineCol = isHigh ? settings.bullishColor : settings.bearishColor
+    Pivot p = Pivot.new(na, na, isHigh, vol, start, end, fibText, array.new<line>())
+    if settings.draw
+        p.ln := line.new(start, end, xloc = xloc.bar_time, color = lineCol, width = 2)
+        p.lb := makePivotLabel(isHigh, end, fibText, settings)
+    p.updatePivot(end, vol, settings, isProjection)
+    p
+
+method delete(Pivot this) =>
+    if not na(this.ln)
+        this.ln.delete()
+    if not na(this.lb)
+        this.lb.delete()
+    this.deleteFibLines()
+
+method isMorePrice(Pivot this, chart.point point) =>
+    int m = this.isHigh ? 1 : -1
+    bool result = point.price * m > this.end.price * m
+
+method lastPivot(ZigZag this) =>
+    Pivot result = this.pivots.size() > 0 ? this.pivots.last() : na
+
+method updateLastPivot(ZigZag this, chart.point point) =>
+    Pivot lastPivot = this.lastPivot()
+    if this.pivots.size() == 1
+        lastPivot.start := point
+        if this.settings.draw
+            lastPivot.ln.set_first_point(point)
+    lastPivot.updatePivot(point, lastPivot.vol + this.sumVol, this.settings)
+    this.sumVol := 0
+
+method newPivotFound(ZigZag this, Pivot new) =>
+    Pivot prevLast = this.lastPivot()
+    if not na(prevLast)
+        prevLast.deleteFibLines()
+    this.pivots.push(new)
+    this.sumVol := 0
+
+method newPivotPointFound(ZigZag this, simple bool isHigh, chart.point point) =>
+    bool result = false
+    Pivot lastPivot = this.lastPivot()
+    if not na(lastPivot)
+        if lastPivot.isHigh == isHigh
+            if lastPivot.isMorePrice(point)
+                this.updateLastPivot(point)
+                result := true
+        else
+            float dev = calcDev(lastPivot.end.price, point.price)
+            if not lastPivot.isHigh and dev >= this.settings.devThreshold or
+                 lastPivot.isHigh and dev <= -1 * this.settings.devThreshold
+                float prevLeg = lastPivot.end.price - lastPivot.start.price
+                float newLeg  = point.price - lastPivot.end.price
+                string fibText = na
+                if this.settings.showFibRatioLabels and prevLeg != 0
+                    float ratio = math.abs(newLeg / prevLeg)
+                    fibText := getFibLevel(ratio, this.settings.fibTolerance)
+                newPivotFound(this, newPivot(lastPivot.end, point, this.sumVol, isHigh, fibText, this.settings))
+                result := true
+    else
+        this.newPivotFound(newPivot(point, point, this.sumVol, isHigh, na, this.settings))
+        result := true
+    result
+
+method tryFindPivot(
+    ZigZag this, series float source, simple bool isHigh, series int depth, series bool registerPivot = true
+) =>
+    chart.point point = findPivotPoint(source, depth, isHigh)
+    bool result = not na(point) and registerPivot ? this.newPivotPointFound(isHigh, point) : false
+
+method popLastPivot(ZigZag this) =>
+    if this.pivots.size() > 0
+        Pivot p = this.pivots.pop()
+        p.delete()
+
+findProjectionPivot(
+    series bool isHigh, series int depth, chart.point lastPivotEnd, series float devThreshold, array<float> prices,
+    array<int> times
+) =>
+    chart.point result = na
+    int n = prices.size()
+    if n > 0
+        array<float> slice = prices.slice(0, bar_index - lastPivotEnd.index)
+        float extreme = isHigh ? slice.max() : slice.min()
+        int ind = slice.indexof(extreme)
+        int dir = isHigh ? 1 : -1
+        bool valid = ind + depth < n and dir * calcDev(lastPivotEnd.price, extreme) >= devThreshold
+        if valid
+            for i = 1 to depth
+                int lIndex = ind + i
+                float v = prices.get(lIndex)
+                if (isHigh and v >= extreme) or (not isHigh and v <= extreme)
+                    valid := false
+                    break
+        if valid
+            result := chart.point.new(times.get(ind), bar_index - ind, extreme)
+        else
+            for i = bar_index to lastPivotEnd.index + 1
+                if i == ind
+                    continue
+                int pIndex = bar_index - i
+                if pIndex < 0 or pIndex >= n or pIndex + depth >= n
+                    continue
+                float candidate = prices.get(pIndex)
+                if dir * calcDev(lastPivotEnd.price, candidate) < devThreshold
+                    continue
+                bool okRight = true
+                if pIndex > 0
+                    for j = 1 to math.min(depth, pIndex)
+                        int rIndex = pIndex - j
+                        float v = prices.get(rIndex)
+                        if (isHigh and v > candidate) or (not isHigh and v < candidate)
+                            okRight := false
+                            break
+                if not okRight
+                    continue
+                bool okLeft = true
+                for j = 1 to depth
+                    int lIndex = pIndex + j
+                    float v = prices.get(lIndex)
+                    if (isHigh and v >= candidate) or (not isHigh and v <= candidate)
+                        okLeft := false
+                        break
+                if not okLeft
+                    continue
+                if na(result) or (isHigh and result.price < candidate) or (not isHigh and result.price > candidate)
+                    result := chart.point.new(times.get(pIndex), i, candidate)
+                    if candidate == extreme
+                        break
+    result
+
+method updateProjectionPivot(ZigZag this, chart.point projectionPoint, series bool isHigh, series float projVol) =>
+    if this.settings.projectionPivots
+        Pivot last = this.lastPivot()
+        this.projection := newPivot(last.end, projectionPoint, projVol, isHigh, na, this.settings, true)
+        this.projection.ln.set_style(line.style_dashed)
+        this.pivots.push(this.projection)
+
+method update(ZigZag this) =>
+    var array<float> highs = array.new<float>(), highs.unshift(high)
+    var array<float> lows  = array.new<float>(), lows.unshift(low)
+    var array<int>   times = array.new<int>(),   times.unshift(time)
+    var array<float> cVols = array.new<float>(), cVols.unshift(ta.cum(volume))
+    var int maxSize = 0
+    int depth = math.max(2, math.floor(this.settings.depth / 2))
+    if not na(this.projection)
+        this.popLastPivot()
+        this.projection := na
+    this.sumVol += nz(volume[depth])
+    int size = this.pivots.size()
+    maxSize := math.max(maxSize, size)
+    bool newHigh = this.tryFindPivot(high, true, depth)
+    bool newLow  = this.tryFindPivot(low, false, depth, this.settings.allowZigZagOnOneBar or not newHigh)
+    bool invalidated = false
+    float threshold = this.settings.devThreshold
+    var Pivot removed = na
+    var chart.point prevProjection = na
+    if this.settings.projectionPivots and barstate.islast
+        if not (newHigh or newLow)
+            Pivot last = this.lastPivot()
+            if not na(last) and na(prevProjection)
+                float extreme = switch
+                    last.isHigh => barstate.ishistory[1] ? highs.slice(0, bar_index - last.end.index).max() : high
+                    => barstate.ishistory[1] ? lows.slice(0, bar_index - last.end.index).min() : low
+                if size == maxSize and isMorePrice(last, chart.point.now(extreme))
+                    this.sumVol += last.vol
+                    removed := last
+                    this.popLastPivot()
+                    invalidated := true
+                    last := this.lastPivot()
+            if not na(last)
+                bool nextIsHigh = not last.isHigh
+                chart.point projectionPoint = findProjectionPivot(
+                    nextIsHigh, depth, last.end, threshold, nextIsHigh ? highs : lows, times
+                )
+                if not na(projectionPoint)
+                    int startOff  = bar_index - last.end.index
+                    int endOff    = bar_index - projectionPoint.index
+                    float projVol = cVols.get(endOff) - cVols.get(startOff)
+                    this.updateProjectionPivot(projectionPoint, nextIsHigh, projVol)
+                if not na(removed)
+                    bool checkHigh = not removed.isHigh
+                    chart.point revProjection = findProjectionPivot(
+                        checkHigh, depth, removed.end, threshold, checkHigh ? highs : lows, times
+                    )
+                    if not na(revProjection) and not na(projectionPoint) and projectionPoint.index < revProjection.index
+                        revProjection := na
+                    if not na(revProjection)
+                        if not na(this.projection)
+                            this.popLastPivot()
+                            this.projection := na
+                        Pivot rev = newPivot(removed.start, removed.end, removed.vol, removed.isHigh, removed.fibText, this.settings)
+                        this.sumVol -= rev.vol
+                        switch
+                            rev.isHigh => newHigh := true
+                            => newLow := true
+                        this.pivots.push(rev)
+                        removed := na
+                        int startOff  = bar_index - rev.end.index
+                        int endOff    = bar_index - revProjection.index
+                        float projVol = cVols.get(endOff) - cVols.get(startOff)
+                        this.updateProjectionPivot(revProjection, checkHigh, projVol)
+                prevProjection := projectionPoint
+        else
+            prevProjection := na
+            removed := na
+    bool result = invalidated or newHigh or newLow
+
+newInstance(Settings settings = na) =>
+    ZigZag result = ZigZag.new(na(settings) ? Settings.new() : settings, array.new<Pivot>())
+
+string TT_D = (
+     "Specifies the total number of bars required to confirm a pivot point. "
+     + "The required number of left and right bars is half this value, rounded down as necessary."
+     )
+string TT_P = (
+     "If selected, the indicator searches for projected pivots that are not yet confirmed on realtime bars. " +
+     "When a valid projection is identified, the Zig Zag updates its structure immediately, then "
+     + "draws a temporary dashed line to show the projected point.\n\n"
+     + "If not selected, the Zig Zag updates its structure only when a new pivot point is confirmed, "
+     + "and it does not search for or display projected pivots."
+     )
+
+float  deviationInput    = input.float(0.1, "Price deviation for reversals (%)", 0.00001, 100.0, 0.5, "0.00001 - 100")
+int    depthInput        = input.int(2, "Pivot legs", 2, tooltip = TT_D)
+color  bullishColorInput = input.color(color.blue, "Bullish impulse color", group = "Zig Zag")
+color  bearishColorInput = input.color(color.red, "Bearish impulse color", group = "Zig Zag")
+bool   projectInput      = input(true, "Calculate projected pivots", tooltip = TT_P, display = display.none)
+bool   showChgInput      = input(true, "Display reversal price change", inline = "priceRev", display = display.none)
+string priceDiffInput    = input.string("Absolute", "", ["Absolute", "Percent"], inline = "priceRev", display = display.none, active = showChgInput)
+
+bool   showFibInput      = input.bool(true, "Show Fibonacci retracement lines", group = "Fibonacci")
+string fibMidStyleInput  = input.string("Dashed", "50% / 61.8% line style", options = ["Dashed", "Dotted", "Solid"], group = "Fibonacci")
+color  fibColorInput     = input.color(color.new(color.orange, 0), "Fibonacci line color", group = "Fibonacci")
+bool   showFibLabelInput = input.bool(true, "Show Fibonacci ratio labels", group = "Fibonacci")
+float  fibToleranceInput = input.float(0.05, "Fibonacci ratio tolerance", 0.01, 0.5, 0.01, group = "Fibonacci")
+
+var zigZag = newInstance(
+     Settings.new(
+         devThreshold = deviationInput,
+         depth = depthInput,
+         bullishColor = bullishColorInput,
+         bearishColor = bearishColorInput,
+         projectionPivots = projectInput,
+         displayReversalPrice = false,
+         displayCumulativeVolume = false,
+         displayReversalPriceChange = showChgInput,
+         differencePriceMode = priceDiffInput,
+         draw = true,
+         allowZigZagOnOneBar = true,
+         showFibRetracement = showFibInput,
+         fibMidStyle = fibMidStyleInput,
+         fibColor = fibColorInput,
+         showFibRatioLabels = showFibLabelInput,
+         fibTolerance = fibToleranceInput
+     )
+     )
+
+zigZag.update()
